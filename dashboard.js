@@ -421,12 +421,12 @@ wss.on('connection', (ws) => {
             }
           }
           
-          // Broadcast to all connected terminal clients
+          // Broadcast to all connected clients watching this terminal
           wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN && client.clientType !== 'file-watcher') {
+            if (client.readyState === WebSocket.OPEN && client.projectId === capturedProjectId) {
               client.send(JSON.stringify({ 
                 type: 'output', 
-                id: currentProjectId,
+                id: capturedProjectId,
                 data 
               }));
             }
@@ -436,7 +436,7 @@ wss.on('connection', (ws) => {
         // Handle exit
         term.onExit(() => {
           // Save state before removing
-          const state = terminalStates.get(currentProjectId);
+          const state = terminalStates.get(capturedProjectId);
           if (state) {
             saveConversationState(state.projectPath, state.projectName);
           }
