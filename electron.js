@@ -36,7 +36,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    title: 'Claude Dashboard',
+    title: 'Overview',
     icon: path.join(__dirname, 'assets', 'icon.png'), // We'll create this
     webPreferences: {
       nodeIntegration: false,
@@ -51,9 +51,9 @@ function createWindow() {
   // Set up the menu
   const template = [
     {
-      label: 'Dashboard',
+      label: 'Overview',
       submenu: [
-        { label: 'About Claude Dashboard', role: 'about' },
+        { label: 'About Overview', role: 'about' },
         { type: 'separator' },
         { label: 'Quit', accelerator: 'CmdOrCtrl+Q', role: 'quit' }
       ]

@@ -1,5 +1,5 @@
 {
-  "name": "claude-dashboard",
+  "name": "overview",
   "version": "1.0.0",
   "main": "electron.js",
   "scripts": {
@@ -14,10 +14,10 @@
   "keywords": ["claude", "dashboard", "terminal", "development"],
   "author": "Miguel Lemos",
   "license": "MIT",
-  "description": "A powerful project dashboard with integrated Claude terminal",
+  "description": "A bird's eye view of all your projects with integrated Claude terminal",
   "build": {
-    "appId": "com.miguelemosreverte.claudedashboard",
-    "productName": "Claude Dashboard",
+    "appId": "com.miguelemosreverte.overview",
+    "productName": "Overview",
     "directories": {
       "output": "dist"
     },
