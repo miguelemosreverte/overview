@@ -1698,7 +1698,9 @@ const generateGridHTML = (projects, config) => {
                 const msg = JSON.parse(event.data);
                 if (msg.id === id) {
                     if (msg.type === 'output') {
-                        terminal.write(msg.data);
+                        // Filter out the bypass permissions text
+                        const filteredData = msg.data.replace(/bypass permissions on \(shift\+tab to cycle\)/gi, '');
+                        terminal.write(filteredData);
                     } else if (msg.type === 'exit') {
                         terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
                         setTimeout(() => {
@@ -2497,6 +2499,12 @@ const generateWorkspaceHTML = (projects, config) => {
                         if (projectElement) {
                             setTimeout(() => {
                                 selectProject(session.projectName, session.projectPath, true);
+                                // Auto-focus terminal after restoring session
+                                setTimeout(() => {
+                                    if (window.currentTerminal) {
+                                        window.currentTerminal.focus();
+                                    }
+                                }, 500);
                             }, 500);
                             return true;
                         }
@@ -2887,9 +2895,12 @@ const generateWorkspaceHTML = (projects, config) => {
                 container.innerHTML = '<div id="terminal"></div>';
                 currentTerminal.open(document.getElementById('terminal'));
                 
-                // Fit terminal to container
+                // Fit terminal to container and focus
                 if (currentTerminal.fitAddon) {
-                    setTimeout(() => currentTerminal.fitAddon.fit(), 0);
+                    setTimeout(() => {
+                        currentTerminal.fitAddon.fit();
+                        currentTerminal.focus();
+                    }, 0);
                 }
                 
                 console.log(\`Reused pooled terminal for \${projectName}\`);
@@ -2925,6 +2936,11 @@ const generateWorkspaceHTML = (projects, config) => {
             terminal.fitAddon = fitAddon;
             terminal.open(document.getElementById('terminal'));
             fitAddon.fit();
+            
+            // Auto-focus terminal for voice-to-text support
+            setTimeout(() => {
+                terminal.focus();
+            }, 100);
             
             // Add to pool
             terminalPool.set(projectId, terminal);
@@ -2979,7 +2995,9 @@ const generateWorkspaceHTML = (projects, config) => {
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'output') {
-                    terminal.write(msg.data);
+                    // Filter out the bypass permissions text
+                    const filteredData = msg.data.replace(/bypass permissions on \(shift\+tab to cycle\)/gi, '');
+                    terminal.write(filteredData);
                 } else if (msg.type === 'exit') {
                     terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
                     // Remove from pool if session ends
@@ -3266,6 +3284,12 @@ const generateWorkspaceHTML = (projects, config) => {
                         if (projectElement) {
                             setTimeout(() => {
                                 selectProject(project.name, project.path);
+                                // Auto-focus terminal after initial project selection
+                                setTimeout(() => {
+                                    if (window.currentTerminal) {
+                                        window.currentTerminal.focus();
+                                    }
+                                }, 500);
                             }, 300);
                             return;
                         }
@@ -3279,6 +3303,12 @@ const generateWorkspaceHTML = (projects, config) => {
                         const projectName = firstProject.dataset.project;
                         const projectPath = firstProject.dataset.path;
                         selectProject(projectName, projectPath);
+                        // Auto-focus terminal after initial project selection
+                        setTimeout(() => {
+                            if (window.currentTerminal) {
+                                window.currentTerminal.focus();
+                            }
+                        }, 500);
                     }, 300);
                 }
             }
