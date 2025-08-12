@@ -1,6 +1,5 @@
 node_modules/
-package-lock.json
-.claude/
-server.log
-*.log
+dist/
 .DS_Store
+*.log
+.claude/

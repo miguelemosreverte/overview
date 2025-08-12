@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeImage } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -37,7 +37,9 @@ function createWindow() {
     width: 1400,
     height: 900,
     title: 'Overview',
-    icon: path.join(__dirname, 'assets', 'icon.png'), // We'll create this
+    icon: process.platform === 'darwin' 
+      ? path.join(__dirname, 'assets', 'icon.icns')
+      : path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -129,6 +131,22 @@ function createWindow() {
 
 // App event handlers
 app.whenReady().then(async () => {
+  // Set the dock icon for macOS
+  if (process.platform === 'darwin') {
+    try {
+      // Try PNG first as it's more reliable
+      const pngPath = path.join(__dirname, 'assets', 'icon.png');
+      if (require('fs').existsSync(pngPath)) {
+        const { nativeImage } = require('electron');
+        const icon = nativeImage.createFromPath(pngPath);
+        app.dock.setIcon(icon);
+        console.log('Dock icon set successfully');
+      }
+    } catch (e) {
+      console.log('Could not set dock icon:', e.message);
+    }
+  }
+  
   try {
     console.log('Starting Express server...');
     await startServer();
