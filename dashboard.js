@@ -2098,6 +2098,11 @@ const generateWorkspaceHTML = (projects, config) => {
         let fileWs = null;
         const projects = ${JSON.stringify(projects.filter(p => !config.hiddenProjects?.includes(p.name)))};
         
+        // Terminal pooling - keep top 5 terminals in memory
+        const terminalPool = new Map();
+        const wsPool = new Map();
+        const MAX_POOL_SIZE = 5;
+        
         // Layout and UI state
         let sidebarCollapsed = false;
         let isVerticalLayout = false;
@@ -2356,21 +2361,37 @@ const generateWorkspaceHTML = (projects, config) => {
             }));
         }
         
-        // Start terminal for project
+        // Start terminal for project (with pooling)
         function startTerminal(projectName, projectPath) {
             const container = document.getElementById('terminalContainer');
             const title = document.getElementById('terminalTitle');
+            const projectId = projectName.replace(/[^a-zA-Z0-9]/g, '_');
             
             title.textContent = \`Claude Terminal - \${projectName}\`;
-            container.innerHTML = '<div id="terminal"></div>';
             
-            // Close existing connection
-            if (currentWs) {
-                currentWs.close();
+            // Check if terminal exists in pool
+            if (terminalPool.has(projectId)) {
+                // Reuse existing terminal
+                currentTerminal = terminalPool.get(projectId);
+                currentWs = wsPool.get(projectId);
+                
+                // Clear container and re-attach terminal
+                container.innerHTML = '<div id="terminal"></div>';
+                currentTerminal.open(document.getElementById('terminal'));
+                
+                // Fit terminal to container
+                if (currentTerminal.fitAddon) {
+                    setTimeout(() => currentTerminal.fitAddon.fit(), 0);
+                }
+                
+                console.log(\`Reused pooled terminal for \${projectName}\`);
+                return;
             }
             
             // Create new terminal
-            currentTerminal = new Terminal({
+            container.innerHTML = '<div id="terminal"></div>';
+            
+            const terminal = new Terminal({
                 cursorBlink: true,
                 fontSize: 14,
                 fontFamily: 'Menlo, Monaco, "Courier New", monospace',
@@ -2381,49 +2402,79 @@ const generateWorkspaceHTML = (projects, config) => {
             });
             
             const fitAddon = new FitAddon.FitAddon();
-            currentTerminal.loadAddon(fitAddon);
-            currentTerminal.fitAddon = fitAddon;
-            currentTerminal.open(document.getElementById('terminal'));
+            terminal.loadAddon(fitAddon);
+            terminal.fitAddon = fitAddon;
+            terminal.open(document.getElementById('terminal'));
             fitAddon.fit();
             
-            // WebSocket connection
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            currentWs = new WebSocket(protocol + '//' + window.location.host);
+            // Add to pool
+            terminalPool.set(projectId, terminal);
+            currentTerminal = terminal;
             
-            currentWs.onopen = () => {
+            // Manage pool size - remove oldest if exceeds max
+            if (terminalPool.size > MAX_POOL_SIZE) {
+                const oldestKey = terminalPool.keys().next().value;
+                const oldTerminal = terminalPool.get(oldestKey);
+                const oldWs = wsPool.get(oldestKey);
+                
+                // Clean up old terminal
+                if (oldTerminal) {
+                    oldTerminal.dispose();
+                }
+                if (oldWs) {
+                    oldWs.close();
+                }
+                
+                terminalPool.delete(oldestKey);
+                wsPool.delete(oldestKey);
+                console.log(\`Removed \${oldestKey} from pool (exceeded max size)\`);
+            }
+            
+            // WebSocket connection (also pooled)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(protocol + '//' + window.location.host);
+            
+            ws.onopen = () => {
                 // Check if we're restoring a session
                 const isRestoring = localStorage.getItem(WORKSPACE_SESSION_KEY) !== null;
-                currentWs.send(JSON.stringify({
+                ws.send(JSON.stringify({
                     type: isRestoring ? 'restore' : 'start',
-                    id: projectName.replace(/[^a-zA-Z0-9]/g, '_'),
+                    id: projectId,
                     path: projectPath,
                     name: projectName,
                     isRestoring: isRestoring
                 }));
             };
             
-            currentWs.onmessage = (event) => {
+            ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'output') {
-                    currentTerminal.write(msg.data);
+                    terminal.write(msg.data);
                 } else if (msg.type === 'exit') {
-                    currentTerminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
+                    terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
+                    // Remove from pool if session ends
+                    terminalPool.delete(projectId);
+                    wsPool.delete(projectId);
                 }
             };
             
-            currentWs.onerror = () => {
-                currentTerminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
+            ws.onerror = () => {
+                terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
-            currentTerminal.onData((data) => {
-                if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-                    currentWs.send(JSON.stringify({
+            terminal.onData((data) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
                         type: 'input',
-                        id: projectName.replace(/[^a-zA-Z0-9]/g, '_'),
+                        id: projectId,
                         data: data
                     }));
                 }
             });
+            
+            // Add WebSocket to pool
+            wsPool.set(projectId, ws);
+            currentWs = ws;
             
             // Handle resize
             const resizeHandler = () => {
@@ -2556,12 +2607,82 @@ const generateWorkspaceHTML = (projects, config) => {
             });
         }
         
+        // Pre-initialize top 5 project terminals
+        function preInitializeTopProjects() {
+            // Get top 5 projects
+            const topProjects = projects.slice(0, 5);
+            
+            topProjects.forEach((project, index) => {
+                const projectId = project.name.replace(/[^a-zA-Z0-9]/g, '_');
+                
+                // Skip if already in pool
+                if (terminalPool.has(projectId)) return;
+                
+                // Create terminal but don't display it
+                const terminal = new Terminal({
+                    cursorBlink: true,
+                    fontSize: 14,
+                    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                    theme: {
+                        background: '#1e1e1e',
+                        foreground: '#d4d4d4'
+                    }
+                });
+                
+                const fitAddon = new FitAddon.FitAddon();
+                terminal.loadAddon(fitAddon);
+                terminal.fitAddon = fitAddon;
+                
+                // Create WebSocket connection
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(protocol + '//' + window.location.host);
+                
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({
+                        type: 'start',
+                        id: projectId,
+                        path: project.path,
+                        name: project.name,
+                        isRestoring: false
+                    }));
+                };
+                
+                ws.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'output') {
+                        terminal.write(msg.data);
+                    }
+                };
+                
+                terminal.onData((data) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'input',
+                            id: projectId,
+                            data: data
+                        }));
+                    }
+                });
+                
+                // Add to pools
+                terminalPool.set(projectId, terminal);
+                wsPool.set(projectId, ws);
+                
+                console.log(\`Pre-initialized terminal for \${project.name} (top \${index + 1})\`);
+            });
+        }
+        
         // Initialize everything
         function initialize() {
             initializeWebSockets();
             loadLayoutPreferences();
             makeResizable();
             makeProjectsSortable();
+            
+            // Pre-initialize top project terminals
+            setTimeout(() => {
+                preInitializeTopProjects();
+            }, 200);
             
             // Load panel sizes after layout is set
             setTimeout(() => {
