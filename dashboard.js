@@ -2792,7 +2792,8 @@ const generateWorkspaceHTML = (projects, config) => {
         
         // Select project by index (for number shortcuts)
         function selectProjectByIndex(index) {
-            const visibleProjects = projects.filter(p => !config.hiddenProjects?.includes(p.name));
+            // Use projects directly, config.hiddenProjects is handled at generation time
+            const visibleProjects = projects;
             if (index >= 0 && index < visibleProjects.length && index < 9) {
                 const project = visibleProjects[index];
                 selectProject(project.name, project.path);
@@ -2820,7 +2821,7 @@ const generateWorkspaceHTML = (projects, config) => {
             currentProject = project;
             
             // Update number button to show active project
-            const visibleProjects = projects.filter(p => !config.hiddenProjects?.includes(p.name));
+            const visibleProjects = projects;
             const projectIndex = visibleProjects.findIndex(p => p.name === projectName);
             if (projectIndex >= 0 && projectIndex < 9) {
                 document.querySelectorAll('.project-num-btn').forEach(btn => {
