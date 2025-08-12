@@ -2587,10 +2587,55 @@ const generateWorkspaceHTML = (projects, config) => {
         
         // Project item click handlers
         document.querySelectorAll('.project-item').forEach(item => {
-            item.addEventListener('click', () => {
+            let clickCount = 0;
+            let clickTimer = null;
+            
+            item.addEventListener('click', (e) => {
                 const projectName = item.dataset.project;
                 const projectPath = item.dataset.path;
-                selectProject(projectName, projectPath);
+                
+                clickCount++;
+                
+                if (clickCount === 1) {
+                    // Single click - select project
+                    clickTimer = setTimeout(() => {
+                        selectProject(projectName, projectPath);
+                        clickCount = 0;
+                    }, 300);
+                } else if (clickCount === 2) {
+                    // Double click - just reset for now
+                    clearTimeout(clickTimer);
+                    clickTimer = setTimeout(() => {
+                        selectProject(projectName, projectPath);
+                        clickCount = 0;
+                    }, 300);
+                } else if (clickCount === 3) {
+                    // Triple click - make priority 1
+                    clearTimeout(clickTimer);
+                    clickCount = 0;
+                    
+                    // Make this project priority 1
+                    fetch('/api/set-priority-one', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ projectName })
+                    }).then(response => {
+                        if (response.ok) {
+                            // Move element to top visually
+                            const projectsList = document.getElementById('projectsList');
+                            projectsList.insertBefore(item, projectsList.firstChild);
+                            
+                            // Flash green to indicate success
+                            item.style.backgroundColor = '#10b981';
+                            setTimeout(() => {
+                                item.style.backgroundColor = '';
+                            }, 300);
+                            
+                            // Select the project
+                            selectProject(projectName, projectPath);
+                        }
+                    });
+                }
             });
         });
         
@@ -2710,6 +2755,49 @@ app.post('/api/reorder-projects', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error reordering projects:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/set-priority-one', async (req, res) => {
+  try {
+    const { projectName } = req.body;
+    const config = await loadProjectsConfig();
+    
+    // Get current order or use existing projects
+    let currentOrder = config.customOrder || [];
+    
+    // If no custom order exists, get all projects
+    if (currentOrder.length === 0) {
+      const files = await fs.readdir(DESKTOP_PATH);
+      const projects = [];
+      
+      for (const file of files) {
+        const filePath = path.join(DESKTOP_PATH, file);
+        const stat = await fs.stat(filePath);
+        if (stat.isDirectory() && !file.startsWith('.')) {
+          projects.push(file);
+        }
+      }
+      currentOrder = projects;
+    }
+    
+    // Remove the project from its current position
+    const index = currentOrder.indexOf(projectName);
+    if (index > -1) {
+      currentOrder.splice(index, 1);
+    }
+    
+    // Add it to the beginning (priority 1)
+    currentOrder.unshift(projectName);
+    
+    // Save the new order
+    config.customOrder = currentOrder;
+    await saveProjectsConfig(config);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error setting project priority:', error);
     res.status(500).json({ error: error.message });
   }
 });
