@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Overview Icon Preview</title>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .icon-box {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            transition: transform 0.3s;
+        }
+        .icon-box:hover {
+            transform: scale(1.05);
+        }
+        .icon-box img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .icon-box p {
+            margin: 10px 0 0 0;
+            font-size: 14px;
+            color: #666;
+        }
+        h1 {
+            color: #333;
+            margin: 0 0 10px 0;
+        }
+        .description {
+            color: #666;
+            margin: 0 0 30px 0;
+        }
+        .main-icon {
+            width: 256px;
+            height: 256px;
+            margin: 0 auto 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Overview App Icon</h1>
+        <p class="description">A 3x3 grid with highlighted active project</p>
+        
+        <div class="main-icon">
+            <img src="assets/icon.png" alt="Overview Icon">
+        </div>
+        
+        <h3>All Sizes</h3>
+        <div class="icon-grid">
+            <div class="icon-box">
+                <img src="assets/overview_icon_256.png" alt="256px">
+                <p>256×256</p>
+            </div>
+            <div class="icon-box">
+                <img src="assets/overview_icon_128.png" alt="128px">
+                <p>128×128</p>
+            </div>
+            <div class="icon-box">
+                <img src="assets/overview_icon_64.png" alt="64px">
+                <p>64×64</p>
+            </div>
+            <div class="icon-box">
+                <img src="assets/overview_icon_32.png" alt="32px">
+                <p>32×32</p>
+            </div>
+            <div class="icon-box">
+                <img src="assets/overview_icon_16.png" alt="16px">
+                <p>16×16</p>
+            </div>
+            <div class="icon-box">
+                <img src="assets/icon.svg" alt="SVG">
+                <p>SVG Version</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

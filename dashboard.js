@@ -2105,9 +2105,9 @@ const generateWorkspaceHTML = (projects, config) => {
         }
         
         .project-item.active {
-            background: #4a9eff;
+            background: #EB8C55;
             color: white;
-            border-color: #6bb6ff;
+            border-color: #F5A475;
         }
         
         .project-icon {
