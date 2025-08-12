@@ -1,0 +1,42 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="64" fill="#1a1a1a"/>
+  
+  <!-- Gradient -->
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a9eff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6bb6ff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Terminal Window -->
+  <rect x="80" y="140" width="352" height="232" rx="8" fill="#2a2a2a" stroke="#404040" stroke-width="2"/>
+  
+  <!-- Terminal Header -->
+  <rect x="80" y="140" width="352" height="32" rx="8" fill="#333"/>
+  <circle cx="104" cy="156" r="6" fill="#ff5f56"/>
+  <circle cx="124" cy="156" r="6" fill="#ffbd2e"/>
+  <circle cx="144" cy="156" r="6" fill="#27c93f"/>
+  
+  <!-- Terminal Content (Claude prompt) -->
+  <text x="100" y="210" font-family="monospace" font-size="24" fill="#4a9eff">claude</text>
+  <text x="180" y="210" font-family="monospace" font-size="24" fill="#e0e0e0">&gt;</text>
+  <rect x="200" y="195" width="16" height="20" fill="#4a9eff" opacity="0.8"/>
+  
+  <!-- Grid dots representing projects -->
+  <circle cx="120" cy="280" r="4" fill="url(#grad)"/>
+  <circle cx="140" cy="280" r="4" fill="#666"/>
+  <circle cx="160" cy="280" r="4" fill="#666"/>
+  
+  <circle cx="120" cy="300" r="4" fill="#666"/>
+  <circle cx="140" cy="300" r="4" fill="#666"/>
+  <circle cx="160" cy="300" r="4" fill="#666"/>
+  
+  <circle cx="120" cy="320" r="4" fill="#666"/>
+  <circle cx="140" cy="320" r="4" fill="#666"/>
+  <circle cx="160" cy="320" r="4" fill="#666"/>
+  
+  <!-- Dashboard text -->
+  <text x="256" y="310" font-family="system-ui" font-size="48" font-weight="bold" fill="#e0e0e0" text-anchor="middle">Dashboard</text>
+</svg>

@@ -1,18 +1,46 @@
 {
-  "name": "desktop",
+  "name": "claude-dashboard",
   "version": "1.0.0",
-  "main": "home.js",
+  "main": "electron.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron .",
+    "server": "node dashboard.js",
+    "build": "electron-builder",
+    "dist": "electron-builder --mac --win --linux",
+    "dist-mac": "electron-builder --mac",
+    "dist-win": "electron-builder --win",
+    "dist-linux": "electron-builder --linux"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": ["claude", "dashboard", "terminal", "development"],
+  "author": "Miguel Lemos",
+  "license": "MIT",
+  "description": "A powerful project dashboard with integrated Claude terminal",
+  "build": {
+    "appId": "com.miguelemosreverte.claudedashboard",
+    "productName": "Claude Dashboard",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Development"
+    }
+  },
   "dependencies": {
     "express": "^5.1.0",
     "js-yaml": "^4.1.0",
     "node-pty": "^1.0.0",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
   }
 }
