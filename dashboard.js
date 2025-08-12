@@ -1698,8 +1698,20 @@ const generateGridHTML = (projects, config) => {
                 const msg = JSON.parse(event.data);
                 if (msg.id === id) {
                     if (msg.type === 'output') {
-                        // Filter out the bypass permissions text
-                        const filteredData = msg.data.replace(/bypass permissions on \(shift\+tab to cycle\)/gi, '');
+                        // Filter out the bypass permissions text and other Claude banner text
+                        let filteredData = msg.data;
+                        
+                        // Multiple patterns to filter out
+                        const patternsToFilter = [
+                            /bypass permissions on[^\\n]*/gi,  // Matches any bypass permissions line
+                            /\\(shift\\+tab to cycle\\)/gi,      // Matches the shift+tab instruction
+                            /dangerously[\\s-]*skip[\\s-]*permissions/gi,  // Matches the flag itself
+                        ];
+                        
+                        patternsToFilter.forEach(pattern => {
+                            filteredData = filteredData.replace(pattern, '');
+                        });
+                        
                         terminal.write(filteredData);
                     } else if (msg.type === 'exit') {
                         terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
@@ -2995,8 +3007,20 @@ const generateWorkspaceHTML = (projects, config) => {
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'output') {
-                    // Filter out the bypass permissions text
-                    const filteredData = msg.data.replace(/bypass permissions on \(shift\+tab to cycle\)/gi, '');
+                    // Filter out the bypass permissions text and other Claude banner text
+                    let filteredData = msg.data;
+                    
+                    // Multiple patterns to filter out
+                    const patternsToFilter = [
+                        /bypass permissions on[^\\n]*/gi,  // Matches any bypass permissions line
+                        /\\(shift\\+tab to cycle\\)/gi,      // Matches the shift+tab instruction
+                        /dangerously[\\s-]*skip[\\s-]*permissions/gi,  // Matches the flag itself
+                    ];
+                    
+                    patternsToFilter.forEach(pattern => {
+                        filteredData = filteredData.replace(pattern, '');
+                    });
+                    
                     terminal.write(filteredData);
                 } else if (msg.type === 'exit') {
                     terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
