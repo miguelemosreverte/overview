@@ -2693,6 +2693,36 @@ const generateWorkspaceHTML = (projects, config) => {
         
         // Load panel sizes
         function loadPanelSizes() {
+            // Check if we have a saved layout preference
+            const savedOrientation = localStorage.getItem('layoutOrientation');
+            const savedTerminalPercent = localStorage.getItem('terminalPercent');
+            const savedPreviewPercent = localStorage.getItem('previewPercent');
+            
+            // If we have specific layout settings, use those instead of raw sizes
+            if (savedOrientation && savedTerminalPercent && savedPreviewPercent) {
+                const centerPanel = document.querySelector('.center-panel');
+                const rightPanel = document.querySelector('.right-panel');
+                const splitter = document.getElementById('splitter');
+                
+                if (savedOrientation === 'vertical') {
+                    centerPanel.style.height = savedTerminalPercent + '%';
+                    rightPanel.style.height = savedPreviewPercent + '%';
+                    centerPanel.style.width = '';
+                    rightPanel.style.width = '';
+                    splitter.style.top = savedTerminalPercent + '%';
+                    splitter.style.left = '';
+                } else {
+                    centerPanel.style.width = savedTerminalPercent + '%';
+                    rightPanel.style.width = savedPreviewPercent + '%';
+                    centerPanel.style.height = '';
+                    rightPanel.style.height = '';
+                    splitter.style.left = savedTerminalPercent + '%';
+                    splitter.style.top = '';
+                }
+                return; // Don't load old panel sizes
+            }
+            
+            // Fallback to old saved sizes (for backwards compatibility)
             const centerSize = localStorage.getItem('centerPanelSize');
             const rightSize = localStorage.getItem('rightPanelSize');
             
@@ -3101,6 +3131,23 @@ const generateWorkspaceHTML = (projects, config) => {
             
             // Load panel sizes after layout is set
             setTimeout(() => {
+                // If no saved layout, set default 50-50
+                if (!localStorage.getItem('layoutOrientation')) {
+                    const centerPanel = document.querySelector('.center-panel');
+                    const rightPanel = document.querySelector('.right-panel');
+                    const splitter = document.getElementById('splitter');
+                    
+                    centerPanel.style.width = '50%';
+                    rightPanel.style.width = '50%';
+                    splitter.style.left = '50%';
+                    
+                    // Save this as the default
+                    localStorage.setItem('layoutOrientation', 'horizontal');
+                    localStorage.setItem('terminalPercent', '50');
+                    localStorage.setItem('previewPercent', '50');
+                }
+                
+                // Load panel sizes (will use the layout settings)
                 loadPanelSizes();
                 
                 // Force resize to ensure panels occupy full space
