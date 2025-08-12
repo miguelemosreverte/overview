@@ -317,15 +317,20 @@ wss.on('connection', (ws) => {
         
         // Send output to WebSocket
         term.onData((data) => {
-          // Store in buffer for reconnection (keep last 10000 chars)
+          // Store in buffer for reconnection (keep last 50000 chars for more history)
           const state = terminalStates.get(currentProjectId);
-          if (state && state.buffer) {
+          if (state) {
+            if (!state.buffer) {
+              state.buffer = [];
+            }
             state.buffer.push(data);
+            
+            // Calculate total buffer size
             const totalLength = state.buffer.reduce((sum, chunk) => sum + chunk.length, 0);
-            if (totalLength > 10000) {
-              // Keep only recent output
+            if (totalLength > 50000) {
+              // Keep only recent output, but preserve more history
               while (state.buffer.length > 0 && 
-                     state.buffer.reduce((sum, chunk) => sum + chunk.length, 0) > 10000) {
+                     state.buffer.reduce((sum, chunk) => sum + chunk.length, 0) > 50000) {
                 state.buffer.shift();
               }
             }
@@ -365,19 +370,33 @@ wss.on('connection', (ws) => {
         });
       } else {
         // Terminal already exists - we're reconnecting
-        // Send buffered output to catch up the client
+        // Make sure state has buffer array
         const state = terminalStates.get(currentProjectId);
-        if (state && state.buffer && state.buffer.length > 0) {
-          // Send all buffered data to reconnecting client
-          setTimeout(() => {
-            state.buffer.forEach(chunk => {
-              ws.send(JSON.stringify({
-                type: 'output',
-                id: currentProjectId,
-                data: chunk
-              }));
-            });
-          }, 100); // Small delay to ensure client is ready
+        if (state) {
+          if (!state.buffer) {
+            state.buffer = [];
+          }
+          
+          // Send buffered output to catch up the client
+          if (state.buffer.length > 0) {
+            // Clear the terminal first and replay all buffer
+            ws.send(JSON.stringify({
+              type: 'output',
+              id: currentProjectId,
+              data: '\x1b[2J\x1b[H' // Clear screen and move cursor to top
+            }));
+            
+            setTimeout(() => {
+              // Send all buffered data to reconnecting client
+              state.buffer.forEach(chunk => {
+                ws.send(JSON.stringify({
+                  type: 'output',
+                  id: currentProjectId,
+                  data: chunk
+                }));
+              });
+            }, 100); // Small delay to ensure client is ready
+          }
         }
       }
       
@@ -419,11 +438,9 @@ process.on('SIGINT', async () => {
   for (const [id, state] of terminalStates.entries()) {
     await saveConversationState(state.projectPath, state.projectName);
     
-    // Send exit command to Claude to save its state
+    // Kill terminal WITHOUT sending /exit (which would get buffered and replayed)
     const term = terminals.get(id);
     if (term) {
-      term.write('/exit\r');
-      await new Promise(resolve => setTimeout(resolve, 500));
       term.kill();
     }
   }
@@ -1241,13 +1258,8 @@ const generateHTML = (projects, config) => {
         });
         
         window.addEventListener('beforeunload', (e) => {
-            if (terminals.size > 0) {
-                terminalConnections.forEach((ws, id) => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'input', id: id, data: '/exit\\r' }));
-                    }
-                });
-            }
+            // Just save state, don't send /exit command
+            saveSessionState();
         });
     </script>
 </body>
