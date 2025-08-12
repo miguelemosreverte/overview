@@ -1838,81 +1838,55 @@ const generateWorkspaceHTML = (projects, config) => {
             display: flex;
             height: 100vh;
             flex-direction: column;
+            position: relative;
         }
         
-        /* Header */
+        /* Hidden header for clean layout */
         .header {
-            background: #333;
-            border-bottom: 1px solid #404040;
-            padding: 8px 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 100;
+            display: none;
         }
         
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .hamburger-btn {
-            background: none;
-            border: none;
-            color: #e0e0e0;
-            font-size: 18px;
+        /* Minimal floating hamburger button */
+        .minimal-hamburger {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1000;
+            background: rgba(45, 45, 45, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 16px;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
             cursor: pointer;
-            padding: 8px;
-            border-radius: 4px;
-            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
         }
         
-        .hamburger-btn:hover {
-            background: #404040;
+        .minimal-hamburger:hover {
+            background: rgba(45, 45, 45, 0.9);
+            color: rgba(255, 255, 255, 0.6);
+            border-color: rgba(255, 255, 255, 0.15);
         }
         
-        .layout-toggle {
-            background: #4a9eff;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
+        .minimal-hamburger.sidebar-open {
+            left: 265px;
         }
         
-        .layout-toggle:hover {
-            background: #6bb6ff;
-        }
+        /* Layout toggle removed - can be accessed via keyboard shortcut */
         
-        .nav-button {
-            background: #6366f1;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 12px;
-        }
-        
-        .nav-button:hover {
-            background: #4f46e5;
-        }
+        /* Nav buttons removed for cleaner UI */
         
         /* Main Content */
         .main-content {
             display: flex;
             flex: 1;
             overflow: hidden;
+            height: 100vh;
         }
         
         .main-content.vertical {
@@ -2108,27 +2082,14 @@ const generateWorkspaceHTML = (projects, config) => {
             height: 3px;
         }
         
-        /* Panel Headers */
-        .panel-header {
-            padding: 10px 15px;
-            background: #333;
-            border-bottom: 1px solid #404040;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .panel-title {
-            font-size: 14px;
-            font-weight: 500;
-            color: #fff;
-        }
+        /* Panel headers removed for cleaner look */
         
         /* Terminal */
         .terminal-container {
             flex: 1;
             overflow: hidden;
             position: relative;
+            background: #1e1e1e;
         }
         
         .terminal-placeholder {
@@ -2153,6 +2114,7 @@ const generateWorkspaceHTML = (projects, config) => {
             flex: 1;
             overflow: hidden;
             position: relative;
+            background: white;
         }
         
         .preview-iframe {
@@ -2179,20 +2141,7 @@ const generateWorkspaceHTML = (projects, config) => {
             color: #555;
         }
         
-        .refresh-btn {
-            background: #4a9eff;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-        
-        .refresh-btn:hover {
-            background: #6bb6ff;
-        }
+        /* Refresh button removed - use Ctrl+R or Cmd+R instead */
         
         /* Scrollbars */
         .projects-list::-webkit-scrollbar {
@@ -2237,32 +2186,10 @@ const generateWorkspaceHTML = (projects, config) => {
 </head>
 <body>
     <div class="workspace">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <button class="hamburger-btn" onclick="toggleSidebar()">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <h1 style="font-size: 18px; font-weight: 600;">
-                    <i class="fas fa-code mr-2"></i>
-                    Workspace View
-                </h1>
-            </div>
-            <div class="header-right">
-                <button class="layout-toggle" onclick="toggleLayout()">
-                    <i class="fas fa-columns" id="layoutIcon"></i>
-                    <span id="layoutText">Vertical</span>
-                </button>
-                <button class="nav-button" onclick="window.location.href='/grid'">
-                    <i class="fas fa-th-large"></i>
-                    Grid
-                </button>
-                <button class="nav-button" onclick="window.location.href='/'">
-                    <i class="fas fa-home"></i>
-                    Home
-                </button>
-            </div>
-        </div>
+        <!-- Minimal Hamburger Button -->
+        <button class="minimal-hamburger" onclick="toggleSidebar()" id="hamburgerBtn">
+            <i class="fas fa-bars"></i>
+        </button>
         
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
@@ -2299,9 +2226,7 @@ const generateWorkspaceHTML = (projects, config) => {
             <div class="panels-container">
                 <!-- Center Panel (Terminal) -->
                 <div class="center-panel">
-                    <div class="panel-header">
-                        <div class="panel-title" id="terminalTitle">Claude Terminal</div>
-                    </div>
+                    <!-- Terminal without header -->
                     <div class="terminal-container" id="terminalContainer">
                         <div class="terminal-placeholder">
                             <i class="fas fa-terminal"></i>
@@ -2316,12 +2241,7 @@ const generateWorkspaceHTML = (projects, config) => {
                 
                 <!-- Right Panel (Preview) -->
                 <div class="right-panel">
-                    <div class="panel-header">
-                        <div class="panel-title" id="previewTitle">Preview</div>
-                        <button class="refresh-btn" id="refreshBtn" onclick="refreshPreview()" style="display: none;">
-                            <i class="fas fa-sync-alt"></i> Refresh
-                        </button>
-                    </div>
+                    <!-- Preview without header -->
                     <div class="preview-container" id="previewContainer">
                         <div class="preview-placeholder">
                             <i class="fas fa-eye"></i>
@@ -2406,12 +2326,15 @@ const generateWorkspaceHTML = (projects, config) => {
         // Layout functions
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
+            const hamburger = document.getElementById('hamburgerBtn');
             sidebarCollapsed = !sidebarCollapsed;
             
             if (sidebarCollapsed) {
                 sidebar.classList.add('collapsed');
+                hamburger.classList.remove('sidebar-open');
             } else {
                 sidebar.classList.remove('collapsed');
+                hamburger.classList.add('sidebar-open');
             }
             
             // Save preference
@@ -2450,6 +2373,12 @@ const generateWorkspaceHTML = (projects, config) => {
         function loadLayoutPreferences() {
             const savedSidebarState = localStorage.getItem('sidebarCollapsed');
             const savedLayoutState = localStorage.getItem('layoutVertical');
+            const hamburger = document.getElementById('hamburgerBtn');
+            
+            // Set initial hamburger position
+            if (!savedSidebarState || savedSidebarState === 'false') {
+                hamburger.classList.add('sidebar-open');
+            }
             
             if (savedSidebarState === 'true') {
                 toggleSidebar();
@@ -2607,10 +2536,7 @@ const generateWorkspaceHTML = (projects, config) => {
         // Start terminal for project (with pooling)
         function startTerminal(projectName, projectPath) {
             const container = document.getElementById('terminalContainer');
-            const title = document.getElementById('terminalTitle');
             const projectId = projectName.replace(/[^a-zA-Z0-9]/g, '_');
-            
-            title.textContent = \`Claude Terminal - \${projectName}\`;
             
             // Check if terminal exists in pool
             if (terminalPool.has(projectId)) {
@@ -2763,10 +2689,6 @@ const generateWorkspaceHTML = (projects, config) => {
         // Update preview panel
         async function updatePreview(projectName, projectPath) {
             const container = document.getElementById('previewContainer');
-            const title = document.getElementById('previewTitle');
-            const refreshBtn = document.getElementById('refreshBtn');
-            
-            title.textContent = \`Preview - \${projectName}\`;
             
             try {
                 const response = await fetch(\`/api/project/\${encodeURIComponent(projectName)}/has-index\`);
@@ -2790,7 +2712,6 @@ const generateWorkspaceHTML = (projects, config) => {
                                 </p>
                             </div>
                         \`;
-                        refreshBtn.style.display = 'none';
                     } else {
                         // Node.js server running, show in iframe
                         container.innerHTML = \`
@@ -2801,12 +2722,10 @@ const generateWorkspaceHTML = (projects, config) => {
                                 <iframe class="preview-iframe" src="\${data.serverUrl}" id="previewIframe" style="flex: 1;"></iframe>
                             </div>
                         \`;
-                        refreshBtn.style.display = 'block';
                         console.log(\`Node.js server started for \${projectName} at \${data.serverUrl}\`);
                     }
                 } else if (data.hasIndex) {
                     container.innerHTML = \`<iframe class="preview-iframe" src="/project/\${encodeURIComponent(projectName)}/index.html" id="previewIframe"></iframe>\`;
-                    refreshBtn.style.display = 'block';
                 } else {
                     container.innerHTML = \`
                         <div class="preview-placeholder">
@@ -2815,7 +2734,6 @@ const generateWorkspaceHTML = (projects, config) => {
                             <p>Create an index.html file in \${projectName} to see live preview</p>
                         </div>
                     \`;
-                    refreshBtn.style.display = 'none';
                 }
             } catch (error) {
                 container.innerHTML = \`
@@ -2825,7 +2743,6 @@ const generateWorkspaceHTML = (projects, config) => {
                         <p>Could not load preview for \${projectName}</p>
                     </div>
                 \`;
-                refreshBtn.style.display = 'none';
             }
         }
         
