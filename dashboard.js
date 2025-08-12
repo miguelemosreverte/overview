@@ -321,11 +321,25 @@ async function isNodeProject(projectPath) {
     const packageJson = JSON.parse(await fs.readFile(path.join(projectPath, 'package.json'), 'utf8'));
     
     // Check for common server files or start scripts
-    const hasServerFile = await Promise.any([
-      fs.access(path.join(projectPath, 'server.js')),
-      fs.access(path.join(projectPath, 'app.js')),
-      fs.access(path.join(projectPath, 'index.js')),
-    ].map(p => p.then(() => true))).catch(() => false);
+    const serverFiles = [
+      'server.js',
+      'app.js', 
+      'index.js',
+      'dashboard.js',
+      'main.js',
+      'start.js'
+    ];
+    
+    // Also check the main field in package.json
+    if (packageJson.main && packageJson.main.endsWith('.js')) {
+      serverFiles.push(packageJson.main);
+    }
+    
+    const hasServerFile = await Promise.any(
+      serverFiles.map(file => 
+        fs.access(path.join(projectPath, file)).then(() => true)
+      )
+    ).catch(() => false);
     
     const hasStartScript = packageJson.scripts && (
       packageJson.scripts.start || 
@@ -333,7 +347,15 @@ async function isNodeProject(projectPath) {
       packageJson.scripts.serve
     );
     
-    return hasServerFile || hasStartScript;
+    // Also check if it has Express or other web framework dependencies
+    const hasWebFramework = packageJson.dependencies && (
+      packageJson.dependencies.express ||
+      packageJson.dependencies.koa ||
+      packageJson.dependencies.fastify ||
+      packageJson.dependencies.hapi
+    );
+    
+    return hasServerFile || hasStartScript || hasWebFramework;
   } catch {
     return false;
   }
@@ -352,6 +374,11 @@ function getAvailablePort() {
 
 // Start Node.js server for a project
 async function startNodeServer(projectName, projectPath) {
+  // Prevent recursive self-hosting - don't start overview within itself
+  if (projectName === 'overview' || projectPath.includes('/overview')) {
+    throw new Error('Cannot start overview dashboard within itself (would cause recursion)');
+  }
+  
   // Check if server is already running
   if (nodeServers.has(projectName)) {
     return nodeServers.get(projectName);
@@ -385,22 +412,45 @@ async function startNodeServer(projectName, projectPath) {
         }
       } else {
         // Default to nodemon with common entry points
-        const entryPoint = await Promise.any([
-          fs.access(path.join(projectPath, 'server.js')).then(() => 'server.js'),
-          fs.access(path.join(projectPath, 'app.js')).then(() => 'app.js'),
-          fs.access(path.join(projectPath, 'index.js')).then(() => 'index.js'),
-        ]).catch(() => 'index.js');
+        const serverFiles = [
+          'server.js',
+          'app.js',
+          'index.js',
+          'dashboard.js',
+          'main.js',
+          'start.js'
+        ];
+        
+        // Check package.json main field
+        if (packageJson.main && packageJson.main.endsWith('.js')) {
+          serverFiles.unshift(packageJson.main);
+        }
+        
+        const entryPoint = await Promise.any(
+          serverFiles.map(file => 
+            fs.access(path.join(projectPath, file)).then(() => file)
+          )
+        ).catch(() => 'index.js');
         
         command = 'nodemon';
         args = [entryPoint];
       }
     } else {
-      // No package.json scripts, use nodemon with common entry point
-      const entryPoint = await Promise.any([
-        fs.access(path.join(projectPath, 'server.js')).then(() => 'server.js'),
-        fs.access(path.join(projectPath, 'app.js')).then(() => 'app.js'),
-        fs.access(path.join(projectPath, 'index.js')).then(() => 'index.js'),
-      ]).catch(() => 'index.js');
+      // No package.json scripts, use nodemon with common entry point  
+      const serverFiles = [
+        'server.js',
+        'app.js',
+        'index.js',
+        'dashboard.js',
+        'main.js',
+        'start.js'
+      ];
+      
+      const entryPoint = await Promise.any(
+        serverFiles.map(file => 
+          fs.access(path.join(projectPath, file)).then(() => file)
+        )
+      ).catch(() => 'index.js');
       
       command = 'nodemon';
       args = [entryPoint];
@@ -2724,12 +2774,20 @@ const generateWorkspaceHTML = (projects, config) => {
                 
                 if (data.isNodeServer) {
                     if (data.error) {
+                        // Special message for overview project
+                        const isOverviewProject = data.error.includes('recursion');
                         container.innerHTML = \`
                             <div class="preview-placeholder">
-                                <i class="fas fa-server"></i>
-                                <h3>Node.js Server Error</h3>
-                                <p>Failed to start server for \${projectName}</p>
-                                <p class="error-detail">\${data.error}</p>
+                                <i class="fas fa-\${isOverviewProject ? 'infinity' : 'server'}"></i>
+                                <h3>\${isOverviewProject ? 'Recursive Protection' : 'Node.js Server Error'}</h3>
+                                <p>\${isOverviewProject ? 
+                                    'Cannot start overview dashboard within itself' : 
+                                    'Failed to start server for ' + projectName}</p>
+                                <p class="error-detail" style="color: #888; font-size: 12px; margin-top: 10px;">
+                                    \${isOverviewProject ? 
+                                        'This would create an infinite recursion. The overview dashboard is already running!' :
+                                        data.error}
+                                </p>
                             </div>
                         \`;
                         refreshBtn.style.display = 'none';
