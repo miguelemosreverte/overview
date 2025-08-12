@@ -27,6 +27,8 @@ const wss = new WebSocket.Server({ server });
 const terminals = new Map();
 const terminalStates = new Map(); // Track state for each project
 const fileWatchers = new Map(); // Track file watchers for projects
+const nodeServers = new Map(); // Track running Node.js servers for projects
+const usedPorts = new Set(); // Track used ports to avoid collisions
 
 // Load projects configuration
 async function loadProjectsConfig() {
@@ -312,6 +314,153 @@ async function hasIndexHtml(projectPath) {
   }
 }
 
+// Check if project is a Node.js project
+async function isNodeProject(projectPath) {
+  try {
+    await fs.access(path.join(projectPath, 'package.json'));
+    const packageJson = JSON.parse(await fs.readFile(path.join(projectPath, 'package.json'), 'utf8'));
+    
+    // Check for common server files or start scripts
+    const hasServerFile = await Promise.any([
+      fs.access(path.join(projectPath, 'server.js')),
+      fs.access(path.join(projectPath, 'app.js')),
+      fs.access(path.join(projectPath, 'index.js')),
+    ].map(p => p.then(() => true))).catch(() => false);
+    
+    const hasStartScript = packageJson.scripts && (
+      packageJson.scripts.start || 
+      packageJson.scripts.dev ||
+      packageJson.scripts.serve
+    );
+    
+    return hasServerFile || hasStartScript;
+  } catch {
+    return false;
+  }
+}
+
+// Get an available port in the 9500-9600 range
+function getAvailablePort() {
+  for (let port = 9500; port <= 9600; port++) {
+    if (!usedPorts.has(port)) {
+      usedPorts.add(port);
+      return port;
+    }
+  }
+  throw new Error('No available ports in range 9500-9600');
+}
+
+// Start Node.js server for a project
+async function startNodeServer(projectName, projectPath) {
+  // Check if server is already running
+  if (nodeServers.has(projectName)) {
+    return nodeServers.get(projectName);
+  }
+  
+  const port = getAvailablePort();
+  
+  try {
+    // Check for package.json to determine the right command
+    const packageJson = JSON.parse(await fs.readFile(path.join(projectPath, 'package.json'), 'utf8'));
+    
+    let command;
+    let args;
+    
+    // Determine which script to run
+    if (packageJson.scripts) {
+      if (packageJson.scripts.dev) {
+        // Use npm run dev if available (likely already uses nodemon)
+        command = 'npm';
+        args = ['run', 'dev'];
+      } else if (packageJson.scripts.start) {
+        // Use nodemon with the start script's target
+        const startScript = packageJson.scripts.start;
+        const match = startScript.match(/node\s+(.+)/);
+        if (match) {
+          command = 'nodemon';
+          args = [match[1], '--port', port.toString()];
+        } else {
+          command = 'npm';
+          args = ['start'];
+        }
+      } else {
+        // Default to nodemon with common entry points
+        const entryPoint = await Promise.any([
+          fs.access(path.join(projectPath, 'server.js')).then(() => 'server.js'),
+          fs.access(path.join(projectPath, 'app.js')).then(() => 'app.js'),
+          fs.access(path.join(projectPath, 'index.js')).then(() => 'index.js'),
+        ]).catch(() => 'index.js');
+        
+        command = 'nodemon';
+        args = [entryPoint];
+      }
+    } else {
+      // No package.json scripts, use nodemon with common entry point
+      const entryPoint = await Promise.any([
+        fs.access(path.join(projectPath, 'server.js')).then(() => 'server.js'),
+        fs.access(path.join(projectPath, 'app.js')).then(() => 'app.js'),
+        fs.access(path.join(projectPath, 'index.js')).then(() => 'index.js'),
+      ]).catch(() => 'index.js');
+      
+      command = 'nodemon';
+      args = [entryPoint];
+    }
+    
+    // Set PORT environment variable
+    const env = { ...process.env, PORT: port.toString() };
+    
+    // Spawn the server process
+    const serverProcess = pty.spawn(command, args, {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 30,
+      cwd: projectPath,
+      env: env
+    });
+    
+    const serverInfo = {
+      port,
+      process: serverProcess,
+      projectName,
+      projectPath,
+      url: `http://localhost:${port}`
+    };
+    
+    nodeServers.set(projectName, serverInfo);
+    
+    // Log server output
+    serverProcess.onData((data) => {
+      console.log(`[${projectName}:${port}] ${data}`);
+    });
+    
+    // Handle server exit
+    serverProcess.onExit(() => {
+      console.log(`Node server for ${projectName} stopped`);
+      nodeServers.delete(projectName);
+      usedPorts.delete(port);
+    });
+    
+    // Give server time to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    return serverInfo;
+  } catch (error) {
+    console.error(`Failed to start Node server for ${projectName}:`, error);
+    usedPorts.delete(port);
+    throw error;
+  }
+}
+
+// Stop Node.js server for a project
+function stopNodeServer(projectName) {
+  const serverInfo = nodeServers.get(projectName);
+  if (serverInfo) {
+    serverInfo.process.kill();
+    nodeServers.delete(projectName);
+    usedPorts.delete(serverInfo.port);
+  }
+}
+
 // Setup file watcher for a project
 function setupFileWatcher(projectName, projectPath) {
   const watcherId = projectName;
@@ -375,9 +524,9 @@ wss.on('connection', (ws) => {
       let term = terminals.get(projectId);
       
       if (!term) {
-        // Check if we should continue a previous session
-        const hasExistingSession = msg.isRestoring || terminalStates.get(projectId);
-        const claudeArgs = hasExistingSession ? 
+        // Only use --continue if explicitly restoring AND we had a previous session
+        const shouldContinue = msg.isRestoring && terminalStates.get(projectId);
+        const claudeArgs = shouldContinue ? 
           ['--continue', '--dangerously-skip-permissions'] : 
           ['--dangerously-skip-permissions'];
         
@@ -540,6 +689,14 @@ wss.on('connection', (ws) => {
 // Graceful shutdown handler
 process.on('SIGINT', async () => {
   console.log('\nGracefully shutting down...');
+  
+  // Stop all Node.js servers
+  for (const [projectName, serverInfo] of nodeServers.entries()) {
+    console.log(`Stopping Node.js server for ${projectName}`);
+    serverInfo.process.kill();
+  }
+  nodeServers.clear();
+  usedPorts.clear();
   
   // Close all file watchers
   fileWatchers.forEach(watcher => watcher.close());
@@ -2565,7 +2722,31 @@ const generateWorkspaceHTML = (projects, config) => {
                 const response = await fetch(\`/api/project/\${encodeURIComponent(projectName)}/has-index\`);
                 const data = await response.json();
                 
-                if (data.hasIndex) {
+                if (data.isNodeServer) {
+                    if (data.error) {
+                        container.innerHTML = \`
+                            <div class="preview-placeholder">
+                                <i class="fas fa-server"></i>
+                                <h3>Node.js Server Error</h3>
+                                <p>Failed to start server for \${projectName}</p>
+                                <p class="error-detail">\${data.error}</p>
+                            </div>
+                        \`;
+                        refreshBtn.style.display = 'none';
+                    } else {
+                        // Node.js server running, show in iframe
+                        container.innerHTML = \`
+                            <div style="width: 100%; height: 100%; display: flex; flex-direction: column;">
+                                <div style="background: #2d2d2d; color: #10b981; padding: 8px; font-size: 12px; border-bottom: 1px solid #444;">
+                                    <i class="fas fa-server"></i> Node.js server running on port \${data.port}
+                                </div>
+                                <iframe class="preview-iframe" src="\${data.serverUrl}" id="previewIframe" style="flex: 1;"></iframe>
+                            </div>
+                        \`;
+                        refreshBtn.style.display = 'block';
+                        console.log(\`Node.js server started for \${projectName} at \${data.serverUrl}\`);
+                    }
+                } else if (data.hasIndex) {
                     container.innerHTML = \`<iframe class="preview-iframe" src="/project/\${encodeURIComponent(projectName)}/index.html" id="previewIframe"></iframe>\`;
                     refreshBtn.style.display = 'block';
                 } else {
@@ -2847,8 +3028,29 @@ app.post('/api/reset-organization', async (req, res) => {
 app.get('/api/project/:projectName/has-index', async (req, res) => {
   const projectName = decodeURIComponent(req.params.projectName);
   const projectPath = path.join(DESKTOP_PATH, projectName);
-  const hasIndex = await hasIndexHtml(projectPath);
-  res.json({ hasIndex });
+  
+  // Check if it's a Node.js project first
+  const isNode = await isNodeProject(projectPath);
+  if (isNode) {
+    try {
+      const serverInfo = await startNodeServer(projectName, projectPath);
+      res.json({ 
+        hasIndex: false, 
+        isNodeServer: true, 
+        serverUrl: serverInfo.url,
+        port: serverInfo.port 
+      });
+    } catch (error) {
+      res.json({ 
+        hasIndex: false, 
+        isNodeServer: true, 
+        error: error.message 
+      });
+    }
+  } else {
+    const hasIndex = await hasIndexHtml(projectPath);
+    res.json({ hasIndex, isNodeServer: false });
+  }
 });
 
 // Routes
