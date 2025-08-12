@@ -47,6 +47,20 @@ async function saveProjectsConfig(config) {
   await fs.writeFile(PROJECTS_CONFIG_FILE, yamlContent);
 }
 
+// Save scroll position for a project
+async function saveProjectScrollPosition(projectName, scrollData) {
+  try {
+    const config = await loadProjectsConfig();
+    if (!config.scrollPositions) {
+      config.scrollPositions = {};
+    }
+    config.scrollPositions[projectName] = scrollData;
+    await saveProjectsConfig(config);
+  } catch (error) {
+    console.error('Error saving scroll position:', error);
+  }
+}
+
 // Ensure .claude directory exists
 async function ensureClaudeDir() {
   try {
@@ -3117,6 +3131,50 @@ const generateWorkspaceHTML = (projects, config) => {
                     }
                 } else if (data.hasIndex) {
                     container.innerHTML = \`<iframe class="preview-iframe" src="/project/\${encodeURIComponent(projectName)}/index.html" id="previewIframe"></iframe>\`;
+                    
+                    // Set up scroll position tracking and restoration
+                    const iframe = document.getElementById('previewIframe');
+                    if (iframe) {
+                        iframe.onload = () => {
+                            // Restore scroll position if available
+                            fetch(\`/api/project/\${encodeURIComponent(projectName)}/scroll-position\`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data.scrollPosition) {
+                                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                                        if (iframeDoc && iframeDoc.documentElement) {
+                                            iframeDoc.documentElement.scrollTop = data.scrollPosition.scrollTop || 0;
+                                            iframeDoc.documentElement.scrollLeft = data.scrollPosition.scrollLeft || 0;
+                                            iframeDoc.body.scrollTop = data.scrollPosition.scrollTop || 0;
+                                            iframeDoc.body.scrollLeft = data.scrollPosition.scrollLeft || 0;
+                                        }
+                                    }
+                                })
+                                .catch(err => console.log('No saved scroll position'));
+                            
+                            // Track scroll changes
+                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (iframeDoc) {
+                                let scrollTimeout;
+                                const saveScroll = () => {
+                                    clearTimeout(scrollTimeout);
+                                    scrollTimeout = setTimeout(() => {
+                                        const scrollData = {
+                                            scrollTop: iframeDoc.documentElement.scrollTop || iframeDoc.body.scrollTop || 0,
+                                            scrollLeft: iframeDoc.documentElement.scrollLeft || iframeDoc.body.scrollLeft || 0,
+                                            timestamp: Date.now()
+                                        };
+                                        fetch(\`/api/project/\${encodeURIComponent(projectName)}/scroll-position\`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(scrollData)
+                                        });
+                                    }, 500); // Debounce scroll saves
+                                };
+                                iframeDoc.addEventListener('scroll', saveScroll, true);
+                            }
+                        };
+                    }
                 } else {
                     container.innerHTML = \`
                         <div class="preview-placeholder">
@@ -3459,6 +3517,31 @@ app.post('/api/set-priority-one', async (req, res) => {
 app.post('/api/reset-organization', async (req, res) => {
   await saveProjectsConfig({});
   res.json({ success: true });
+});
+
+// Get scroll position for a project
+app.get('/api/project/:projectName/scroll-position', async (req, res) => {
+  const projectName = decodeURIComponent(req.params.projectName);
+  try {
+    const config = await loadProjectsConfig();
+    const scrollPosition = config.scrollPositions?.[projectName] || null;
+    res.json({ scrollPosition });
+  } catch (error) {
+    res.json({ scrollPosition: null });
+  }
+});
+
+// Save scroll position for a project
+app.post('/api/project/:projectName/scroll-position', async (req, res) => {
+  const projectName = decodeURIComponent(req.params.projectName);
+  const scrollData = req.body;
+  
+  try {
+    await saveProjectScrollPosition(projectName, scrollData);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save scroll position' });
+  }
 });
 
 app.get('/api/project/:projectName/has-index', async (req, res) => {
