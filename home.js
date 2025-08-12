@@ -292,7 +292,7 @@ wss.on('connection', (ws) => {
       
       if (!term) {
         // Check if we should continue a previous session
-        const hasExistingSession = terminalStates.get(currentProjectId);
+        const hasExistingSession = msg.isRestoring || terminalStates.get(currentProjectId);
         const claudeArgs = hasExistingSession ? 
           ['--continue', '--dangerously-skip-permissions'] : 
           ['--dangerously-skip-permissions'];
@@ -759,6 +759,77 @@ const generateHTML = (projects, config) => {
         let currentTerminalId = null;
         let ws = null;
         
+        // Session persistence
+        const SESSION_STORAGE_KEY = 'claudeTerminalSessions';
+        
+        function saveSessionState() {
+            const sessions = [];
+            for (const [id, terminal] of terminals) {
+                const btn = document.getElementById('btn-' + id);
+                if (btn) {
+                    sessions.push({
+                        id: id,
+                        path: btn.dataset.path,
+                        name: btn.dataset.name,
+                        minimized: minimizedSessions.has(id),
+                        active: currentTerminalId === id
+                    });
+                }
+            }
+            localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
+        }
+        
+        function restoreSessionsOnLoad() {
+            const savedSessions = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (savedSessions) {
+                try {
+                    const sessions = JSON.parse(savedSessions);
+                    sessions.forEach(session => {
+                        // Mark button to show session exists
+                        const btn = document.getElementById('btn-' + session.id);
+                        if (btn) {
+                            btn.dataset.path = session.path;
+                            btn.dataset.name = session.name;
+                            
+                            // Add visual indicator that session is saved
+                            if (!btn.classList.contains('session-exists')) {
+                                btn.classList.add('session-exists');
+                                btn.style.backgroundColor = '#059669'; // green to show saved session
+                            }
+                            
+                            // If session was minimized, add to minimized set
+                            if (session.minimized) {
+                                minimizedSessions.add(session.id);
+                                terminals.set(session.id, {}); // Placeholder for terminal
+                            }
+                            
+                            // If session was active, restore it after a short delay
+                            if (session.active && !session.minimized) {
+                                setTimeout(() => {
+                                    openTerminal(session.id, session.path, session.name, true);
+                                }, 500);
+                            }
+                        }
+                    });
+                    
+                    // Update minimized terminals display
+                    if (minimizedSessions.size > 0) {
+                        updateMinimizedTerminals();
+                    }
+                } catch (error) {
+                    console.error('Error restoring sessions:', error);
+                }
+            }
+        }
+        
+        // Save state before unload
+        window.addEventListener('beforeunload', saveSessionState);
+        
+        // Restore sessions on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(restoreSessionsOnLoad, 100); // Small delay to ensure DOM is ready
+        });
+        
         // Organization data
         const allProjects = ${JSON.stringify(projects)};
         const currentConfig = ${JSON.stringify(config)};
@@ -968,7 +1039,7 @@ const generateHTML = (projects, config) => {
             }
         }
         
-        function openTerminal(id, path, name) {
+        function openTerminal(id, path, name, isRestoring = false) {
             currentTerminalId = id;
             document.getElementById('terminalTitle').textContent = 'Claude Terminal - ' + name;
             document.getElementById('terminalModal').style.display = 'flex';
@@ -976,9 +1047,16 @@ const generateHTML = (projects, config) => {
             minimizedSessions.delete(id);
             updateMinimizedTerminals();
             
+            // Store data on button for persistence
+            const btn = document.getElementById('btn-' + id);
+            if (btn) {
+                btn.dataset.path = path;
+                btn.dataset.name = name;
+            }
+            
             let terminal = terminals.get(id);
             
-            if (!terminal) {
+            if (!terminal || !terminal.write) {  // Check if it's a real terminal or placeholder
                 terminal = new Terminal({
                     cursorBlink: true,
                     fontSize: 14,
@@ -1007,10 +1085,11 @@ const generateHTML = (projects, config) => {
                 
                 ws.onopen = () => {
                     ws.send(JSON.stringify({ 
-                        type: terminals.has(id) ? 'restore' : 'start', 
+                        type: isRestoring ? 'restore' : 'start', 
                         id: id, 
                         path: path,
-                        name: name 
+                        name: name,
+                        isRestoring: isRestoring
                     }));
                 };
                 
@@ -1093,6 +1172,7 @@ const generateHTML = (projects, config) => {
                 }
                 
                 currentTerminalId = null;
+                saveSessionState(); // Save state when minimizing
             }
         }
         
