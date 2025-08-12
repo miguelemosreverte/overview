@@ -2102,6 +2102,42 @@ const generateWorkspaceHTML = (projects, config) => {
         let sidebarCollapsed = false;
         let isVerticalLayout = false;
         
+        // Session persistence for workspace view
+        const WORKSPACE_SESSION_KEY = 'workspaceTerminalSession';
+        
+        function saveWorkspaceSession() {
+            if (currentProject && currentTerminal) {
+                const session = {
+                    projectName: currentProject.name,
+                    projectPath: currentProject.path,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(WORKSPACE_SESSION_KEY, JSON.stringify(session));
+            }
+        }
+        
+        function restoreWorkspaceSession() {
+            const savedSession = localStorage.getItem(WORKSPACE_SESSION_KEY);
+            if (savedSession) {
+                try {
+                    const session = JSON.parse(savedSession);
+                    // Check if session is less than 24 hours old
+                    if (Date.now() - session.timestamp < 86400000) {
+                        const projectElement = document.querySelector(\`[data-project="\${session.projectName}"]\`);
+                        if (projectElement) {
+                            setTimeout(() => {
+                                selectProject(session.projectName, session.projectPath, true);
+                            }, 500);
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error restoring session:', e);
+                }
+            }
+            return false;
+        }
+        
         // Initialize WebSocket connections
         function initializeWebSockets() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2285,7 +2321,7 @@ const generateWorkspaceHTML = (projects, config) => {
         }
         
         // Project selection
-        function selectProject(projectName, projectPath) {
+        function selectProject(projectName, projectPath, isRestoring = false) {
             // Update active project
             document.querySelectorAll('.project-item').forEach(item => {
                 item.classList.remove('active');
@@ -2297,6 +2333,9 @@ const generateWorkspaceHTML = (projects, config) => {
             
             // Update terminal
             startTerminal(projectName, projectPath);
+            
+            // Save session
+            saveWorkspaceSession();
             
             // Update preview
             updatePreview(projectName, projectPath);
@@ -2352,11 +2391,14 @@ const generateWorkspaceHTML = (projects, config) => {
             currentWs = new WebSocket(protocol + '//' + window.location.host);
             
             currentWs.onopen = () => {
+                // Check if we're restoring a session
+                const isRestoring = localStorage.getItem(WORKSPACE_SESSION_KEY) !== null;
                 currentWs.send(JSON.stringify({
-                    type: 'start',
+                    type: isRestoring ? 'restore' : 'start',
                     id: projectName.replace(/[^a-zA-Z0-9]/g, '_'),
                     path: projectPath,
-                    name: projectName
+                    name: projectName,
+                    isRestoring: isRestoring
                 }));
             };
             
@@ -2526,31 +2568,41 @@ const generateWorkspaceHTML = (projects, config) => {
                 loadPanelSizes();
             }, 100);
             
-            // Auto-select last project or first project
-            const lastProject = localStorage.getItem('lastSelectedProject');
-            if (lastProject) {
-                try {
-                    const project = JSON.parse(lastProject);
-                    const projectElement = document.querySelector(\`[data-project="\${project.name}"]\`);
-                    if (projectElement) {
-                        setTimeout(() => {
-                            selectProject(project.name, project.path);
-                        }, 300);
-                        return;
-                    }
-                } catch (e) {}
-            }
+            // Try to restore workspace session first
+            const sessionRestored = restoreWorkspaceSession();
             
-            // Fallback to first project
-            const firstProject = document.querySelector('.project-item');
-            if (firstProject) {
-                setTimeout(() => {
-                    const projectName = firstProject.dataset.project;
-                    const projectPath = firstProject.dataset.path;
-                    selectProject(projectName, projectPath);
-                }, 300);
+            if (!sessionRestored) {
+                // Auto-select last project or first project
+                const lastProject = localStorage.getItem('lastSelectedProject');
+                if (lastProject) {
+                    try {
+                        const project = JSON.parse(lastProject);
+                        const projectElement = document.querySelector(\`[data-project="\${project.name}"]\`);
+                        if (projectElement) {
+                            setTimeout(() => {
+                                selectProject(project.name, project.path);
+                            }, 300);
+                            return;
+                        }
+                    } catch (e) {}
+                }
+                
+                // Fallback to first project
+                const firstProject = document.querySelector('.project-item');
+                if (firstProject) {
+                    setTimeout(() => {
+                        const projectName = firstProject.dataset.project;
+                        const projectPath = firstProject.dataset.path;
+                        selectProject(projectName, projectPath);
+                    }, 300);
+                }
             }
         }
+        
+        // Save session on page unload
+        window.addEventListener('beforeunload', () => {
+            saveWorkspaceSession();
+        });
         
         initialize();
     </script>
