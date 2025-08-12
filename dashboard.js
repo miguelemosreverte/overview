@@ -1889,6 +1889,44 @@ const generateWorkspaceHTML = (projects, config) => {
             border-color: rgba(255, 255, 255, 0.15);
         }
         
+        /* Project number indicators */
+        .project-numbers {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            padding-left: 8px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            margin-left: 4px;
+        }
+        
+        .project-num-btn {
+            background: transparent;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.4);
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .project-num-btn:hover {
+            background: rgba(45, 45, 45, 0.5);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .project-num-btn.active {
+            background: rgba(45, 45, 45, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
         /* Layout control buttons */
         .layout-controls {
             display: flex;
@@ -2293,6 +2331,18 @@ const generateWorkspaceHTML = (projects, config) => {
             <button class="minimal-hamburger" onclick="toggleSidebar()" id="hamburgerBtn">
                 <i class="fas fa-bars"></i>
             </button>
+            
+            <!-- Project Number Indicators -->
+            <div class="project-numbers">
+                ${projects.slice(0, 9).map((project, index) => `
+                    <button class="project-num-btn ${index === 0 ? 'active' : ''}" 
+                            onclick="selectProjectByIndex(${index})" 
+                            data-index="${index}"
+                            title="${project.name}">
+                        ${index + 1}
+                    </button>
+                `).join('')}
+            </div>
             
             <!-- Layout Control Buttons -->
             <div class="layout-controls">
@@ -2740,6 +2790,24 @@ const generateWorkspaceHTML = (projects, config) => {
             }
         }
         
+        // Select project by index (for number shortcuts)
+        function selectProjectByIndex(index) {
+            const visibleProjects = projects.filter(p => !config.hiddenProjects?.includes(p.name));
+            if (index >= 0 && index < visibleProjects.length && index < 9) {
+                const project = visibleProjects[index];
+                selectProject(project.name, project.path);
+                
+                // Update number button states
+                document.querySelectorAll('.project-num-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                const activeBtn = document.querySelector(\`.project-num-btn[data-index="\${index}"]\`);
+                if (activeBtn) {
+                    activeBtn.classList.add('active');
+                }
+            }
+        }
+        
         // Project selection
         function selectProject(projectName, projectPath, isRestoring = false) {
             // Update active project
@@ -2750,6 +2818,19 @@ const generateWorkspaceHTML = (projects, config) => {
             
             const project = projects.find(p => p.name === projectName);
             currentProject = project;
+            
+            // Update number button to show active project
+            const visibleProjects = projects.filter(p => !config.hiddenProjects?.includes(p.name));
+            const projectIndex = visibleProjects.findIndex(p => p.name === projectName);
+            if (projectIndex >= 0 && projectIndex < 9) {
+                document.querySelectorAll('.project-num-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                const activeBtn = document.querySelector(\`.project-num-btn[data-index="\${projectIndex}"]\`);
+                if (activeBtn) {
+                    activeBtn.classList.add('active');
+                }
+            }
             
             // Update terminal
             startTerminal(projectName, projectPath);
@@ -3195,6 +3276,23 @@ const generateWorkspaceHTML = (projects, config) => {
         // Save session on page unload
         window.addEventListener('beforeunload', () => {
             saveWorkspaceSession();
+        });
+        
+        // Global keyboard shortcuts for projects 1-9
+        document.addEventListener('keydown', (e) => {
+            // Number keys 1-9 to switch projects (works globally)
+            if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                // Don't interfere with input fields (except we allow it in terminal)
+                const activeElement = document.activeElement;
+                const isInputField = activeElement.tagName === 'INPUT' || 
+                                    activeElement.tagName === 'TEXTAREA' ||
+                                    (activeElement.contentEditable === 'true');
+                
+                if (!isInputField) {
+                    e.preventDefault();
+                    selectProjectByIndex(parseInt(e.key) - 1);
+                }
+            }
         });
         
         initialize();
