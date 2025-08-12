@@ -598,17 +598,79 @@ wss.on('connection', (ws) => {
           buffer: []
         });
         
+        // Send a clear screen command right after starting
+        setTimeout(() => {
+          term.write('\x1b[2J\x1b[H');  // Clear screen and move cursor to top
+        }, 100);
+        
         // Send output to WebSocket - capture projectId in closure
         const capturedProjectId = projectId;
         
         // Buffer for collecting rapid updates (helps with ANSI sequences)
         let outputBuffer = '';
         let outputTimer = null;
+        let initialBannerSkipped = false;
+        let consecutiveEmptyLines = 0;
         
         const flushOutput = () => {
           if (outputBuffer) {
-            const dataToSend = outputBuffer;
+            let dataToSend = outputBuffer;
             outputBuffer = '';
+            
+            // Aggressive filtering for initial Claude banner and UI elements
+            if (!initialBannerSkipped) {
+              // Remove all the banner lines
+              const patterns = [
+                /[╭─╮│╰╯┌─┐└┘├┤┬┴┼]/g,  // Box drawing characters
+                /✻\s*Welcome to Claude Code!/g,
+                /\/help for help.*\/status/g,
+                /cwd:.*Desktop\//g,
+                /※\s*Tip:/g,
+                /Use git worktrees/g,
+                /Learn more.*https:/g,
+                /Try ".*"/g,
+                /bypass permissions/g,
+                /shift\+tab to cycle/g,
+                /Press Esc twice/g,
+                /No conversation found/g,
+              ];
+              
+              for (const pattern of patterns) {
+                dataToSend = dataToSend.replace(pattern, '');
+              }
+              
+              // Remove lines that are just box characters or empty
+              const lines = dataToSend.split('\n');
+              const filteredLines = lines.filter(line => {
+                const trimmed = line.trim();
+                // Skip empty lines and lines with only box characters
+                if (!trimmed || /^[│╭╮╰╯─┌┐└┘├┤┬┴┼\s]+$/.test(trimmed)) {
+                  return false;
+                }
+                // Skip lines with certain keywords
+                if (trimmed.includes('Welcome to Claude') || 
+                    trimmed.includes('bypass permissions') ||
+                    trimmed.includes('shift+tab') ||
+                    trimmed.includes('/help for help')) {
+                  return false;
+                }
+                return true;
+              });
+              
+              dataToSend = filteredLines.join('\n');
+              
+              // If we see a prompt character, we're past the banner
+              if (dataToSend.includes('>') || dataToSend.includes('$')) {
+                initialBannerSkipped = true;
+                // Clean up and just show prompt
+                dataToSend = dataToSend.replace(/.*?([>$])/s, '$1');
+              }
+              
+              // Don't send if it's just whitespace after filtering
+              if (!dataToSend.trim()) {
+                return;
+              }
+            }
             
             // Broadcast to all connected clients watching this terminal
             wss.clients.forEach((client) => {
