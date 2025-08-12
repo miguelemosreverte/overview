@@ -2385,6 +2385,9 @@ const generateWorkspaceHTML = (projects, config) => {
                 }
                 
                 console.log(\`Reused pooled terminal for \${projectName}\`);
+                
+                // Save session when reusing pooled terminal
+                saveWorkspaceSession();
                 return;
             }
             
@@ -2435,8 +2438,18 @@ const generateWorkspaceHTML = (projects, config) => {
             const ws = new WebSocket(protocol + '//' + window.location.host);
             
             ws.onopen = () => {
-                // Check if we're restoring a session
-                const isRestoring = localStorage.getItem(WORKSPACE_SESSION_KEY) !== null;
+                // Check if we have a saved session for THIS specific project
+                const savedSession = localStorage.getItem(WORKSPACE_SESSION_KEY);
+                let isRestoring = false;
+                
+                if (savedSession) {
+                    try {
+                        const session = JSON.parse(savedSession);
+                        // Only restore if it's the SAME project
+                        isRestoring = (session.projectName === projectName);
+                    } catch (e) {}
+                }
+                
                 ws.send(JSON.stringify({
                     type: isRestoring ? 'restore' : 'start',
                     id: projectId,
@@ -2607,70 +2620,8 @@ const generateWorkspaceHTML = (projects, config) => {
             });
         }
         
-        // Pre-initialize top 5 project terminals
-        function preInitializeTopProjects() {
-            // Get top 5 projects
-            const topProjects = projects.slice(0, 5);
-            
-            topProjects.forEach((project, index) => {
-                const projectId = project.name.replace(/[^a-zA-Z0-9]/g, '_');
-                
-                // Skip if already in pool
-                if (terminalPool.has(projectId)) return;
-                
-                // Create terminal but don't display it
-                const terminal = new Terminal({
-                    cursorBlink: true,
-                    fontSize: 14,
-                    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-                    theme: {
-                        background: '#1e1e1e',
-                        foreground: '#d4d4d4'
-                    }
-                });
-                
-                const fitAddon = new FitAddon.FitAddon();
-                terminal.loadAddon(fitAddon);
-                terminal.fitAddon = fitAddon;
-                
-                // Create WebSocket connection
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const ws = new WebSocket(protocol + '//' + window.location.host);
-                
-                ws.onopen = () => {
-                    ws.send(JSON.stringify({
-                        type: 'start',
-                        id: projectId,
-                        path: project.path,
-                        name: project.name,
-                        isRestoring: false
-                    }));
-                };
-                
-                ws.onmessage = (event) => {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'output') {
-                        terminal.write(msg.data);
-                    }
-                };
-                
-                terminal.onData((data) => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'input',
-                            id: projectId,
-                            data: data
-                        }));
-                    }
-                });
-                
-                // Add to pools
-                terminalPool.set(projectId, terminal);
-                wsPool.set(projectId, ws);
-                
-                console.log(\`Pre-initialized terminal for \${project.name} (top \${index + 1})\`);
-            });
-        }
+        // Note: Removed pre-initialization as it was causing shared terminal issues
+        // Pooling happens after first use which is sufficient for performance
         
         // Initialize everything
         function initialize() {
@@ -2679,10 +2630,6 @@ const generateWorkspaceHTML = (projects, config) => {
             makeResizable();
             makeProjectsSortable();
             
-            // Pre-initialize top project terminals
-            setTimeout(() => {
-                preInitializeTopProjects();
-            }, 200);
             
             // Load panel sizes after layout is set
             setTimeout(() => {
