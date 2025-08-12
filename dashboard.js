@@ -1673,7 +1673,12 @@ const generateWorkspaceHTML = (projects, config) => {
         }
         
         .main-content.vertical {
+            flex-direction: row; /* Keep sidebar on left */
+        }
+        
+        .main-content.vertical .panels-container {
             flex-direction: column;
+            width: 100%;
         }
         
         /* Sidebar */
@@ -1791,9 +1796,6 @@ const generateWorkspaceHTML = (projects, config) => {
             overflow: hidden;
         }
         
-        .main-content.vertical .panels-container {
-            flex-direction: column;
-        }
         
         .center-panel {
             width: 50%;
@@ -1808,6 +1810,7 @@ const generateWorkspaceHTML = (projects, config) => {
         .main-content.vertical .center-panel {
             width: 100%;
             height: 50%;
+            min-height: 200px;
         }
         
         .right-panel {
@@ -1823,6 +1826,7 @@ const generateWorkspaceHTML = (projects, config) => {
         .main-content.vertical .right-panel {
             width: 100%;
             height: 50%;
+            min-height: 200px;
         }
         
         /* Splitter */
@@ -2181,6 +2185,7 @@ const generateWorkspaceHTML = (projects, config) => {
             
             let isResizing = false;
             let startPos, startSize;
+            let rafId = null; // For requestAnimationFrame
             
             splitter.addEventListener('mousedown', (e) => {
                 isResizing = true;
@@ -2194,38 +2199,52 @@ const generateWorkspaceHTML = (projects, config) => {
             document.addEventListener('mousemove', (e) => {
                 if (!isResizing) return;
                 
-                const currentPos = isVerticalLayout ? e.clientY : e.clientX;
-                const diff = currentPos - startPos;
-                const newSize = startSize + diff;
-                
-                if (isVerticalLayout) {
-                    const totalHeight = mainContent.offsetHeight - 5; // minus splitter
-                    const minHeight = 200;
-                    const maxHeight = totalHeight - minHeight;
-                    
-                    if (newSize >= minHeight && newSize <= maxHeight) {
-                        const percentage = (newSize / totalHeight) * 100;
-                        centerPanel.style.height = percentage + '%';
-                        rightPanel.style.height = (100 - percentage) + '%';
-                    }
-                } else {
-                    const totalWidth = mainContent.offsetWidth - 5; // minus splitter
-                    const minWidth = 300;
-                    const maxWidth = totalWidth - minWidth;
-                    
-                    if (newSize >= minWidth && newSize <= maxWidth) {
-                        const percentage = (newSize / totalWidth) * 100;
-                        centerPanel.style.width = percentage + '%';
-                        rightPanel.style.width = (100 - percentage) + '%';
-                    }
+                // Cancel previous animation frame to reduce lag
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
                 }
                 
-                // Resize terminal
-                if (currentTerminal && currentTerminal.fitAddon) {
-                    setTimeout(() => {
-                        currentTerminal.fitAddon.fit();
-                    }, 0);
-                }
+                rafId = requestAnimationFrame(() => {
+                    const currentPos = isVerticalLayout ? e.clientY : e.clientX;
+                    const diff = currentPos - startPos;
+                    const newSize = startSize + diff;
+                    
+                    if (isVerticalLayout) {
+                        const container = document.querySelector('.panels-container');
+                        const totalHeight = container.offsetHeight - 5; // minus splitter
+                        const minHeight = 200;
+                        const maxHeight = totalHeight - minHeight;
+                        
+                        if (newSize >= minHeight && newSize <= maxHeight) {
+                            const percentage = (newSize / totalHeight) * 100;
+                            // Snap to 5% increments for smoother experience
+                            const snappedPercentage = Math.round(percentage / 5) * 5;
+                            centerPanel.style.height = snappedPercentage + '%';
+                            rightPanel.style.height = (100 - snappedPercentage) + '%';
+                        }
+                    } else {
+                        const container = document.querySelector('.panels-container');
+                        const totalWidth = container.offsetWidth - 5; // minus splitter
+                        const minWidth = 300;
+                        const maxWidth = totalWidth - minWidth;
+                        
+                        if (newSize >= minWidth && newSize <= maxWidth) {
+                            const percentage = (newSize / totalWidth) * 100;
+                            // Snap to 5% increments for smoother experience
+                            const snappedPercentage = Math.round(percentage / 5) * 5;
+                            centerPanel.style.width = snappedPercentage + '%';
+                            rightPanel.style.width = (100 - snappedPercentage) + '%';
+                        }
+                    }
+                    
+                    // Resize terminal with debounce
+                    if (currentTerminal && currentTerminal.fitAddon) {
+                        clearTimeout(window.resizeTerminalTimeout);
+                        window.resizeTerminalTimeout = setTimeout(() => {
+                            currentTerminal.fitAddon.fit();
+                        }, 100);
+                    }
+                });
             });
             
             document.addEventListener('mouseup', () => {
