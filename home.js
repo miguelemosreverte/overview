@@ -311,11 +311,26 @@ wss.on('connection', (ws) => {
           projectPath,
           projectName,
           active: true,
-          startTime: new Date()
+          startTime: new Date(),
+          buffer: [] // Store recent output for reconnection
         });
         
         // Send output to WebSocket
         term.onData((data) => {
+          // Store in buffer for reconnection (keep last 10000 chars)
+          const state = terminalStates.get(currentProjectId);
+          if (state && state.buffer) {
+            state.buffer.push(data);
+            const totalLength = state.buffer.reduce((sum, chunk) => sum + chunk.length, 0);
+            if (totalLength > 10000) {
+              // Keep only recent output
+              while (state.buffer.length > 0 && 
+                     state.buffer.reduce((sum, chunk) => sum + chunk.length, 0) > 10000) {
+                state.buffer.shift();
+              }
+            }
+          }
+          
           // Broadcast to all connected clients watching this terminal
           wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
@@ -348,6 +363,22 @@ wss.on('connection', (ws) => {
             }
           });
         });
+      } else {
+        // Terminal already exists - we're reconnecting
+        // Send buffered output to catch up the client
+        const state = terminalStates.get(currentProjectId);
+        if (state && state.buffer && state.buffer.length > 0) {
+          // Send all buffered data to reconnecting client
+          setTimeout(() => {
+            state.buffer.forEach(chunk => {
+              ws.send(JSON.stringify({
+                type: 'output',
+                id: currentProjectId,
+                data: chunk
+              }));
+            });
+          }, 100); // Small delay to ensure client is ready
+        }
       }
       
       // Associate this WebSocket with the terminal
@@ -1079,19 +1110,28 @@ const generateHTML = (projects, config) => {
             terminal.open(terminalDiv);
             terminal.fitAddon.fit();
             
-            if (!terminalConnections.has(id)) {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(protocol + '//' + window.location.host + '/terminal');
-                
-                ws.onopen = () => {
-                    ws.send(JSON.stringify({ 
-                        type: isRestoring ? 'restore' : 'start', 
-                        id: id, 
-                        path: path,
-                        name: name,
-                        isRestoring: isRestoring
-                    }));
-                };
+            // Always create new WebSocket for reconnection
+            if (terminalConnections.has(id)) {
+                // Close old connection if exists
+                const oldWs = terminalConnections.get(id);
+                if (oldWs && oldWs.readyState === WebSocket.OPEN) {
+                    oldWs.close();
+                }
+                terminalConnections.delete(id);
+            }
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + '/terminal');
+            
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ 
+                    type: isRestoring ? 'restore' : 'start', 
+                    id: id, 
+                    path: path,
+                    name: name,
+                    isRestoring: isRestoring
+                }));
+            };
                 
                 ws.onmessage = (event) => {
                     const msg = JSON.parse(event.data);
@@ -1119,10 +1159,7 @@ const generateHTML = (projects, config) => {
                     }
                 });
                 
-                terminalConnections.set(id, ws);
-            } else {
-                ws = terminalConnections.get(id);
-            }
+            terminalConnections.set(id, ws);
             
             document.getElementById('btn-' + id).classList.add('active');
             
