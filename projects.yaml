@@ -1,0 +1,51 @@
+organized: true
+clusters:
+  - name: Active Traffic Analysis
+    priority: 1
+    projects:
+      - 3p-false-positives-histograms
+      - claude-as-a-service
+      - kpi-driven-agentic-coding
+      - TableauConflationReports
+  - name: AI & Machine Learning
+    priority: 2
+    projects:
+      - agents
+      - blueprint-generation
+  - name: Graphics & Visualization
+    priority: 3
+    projects:
+      - cornell-box-restir
+      - architecture-rust-web-gpu
+      - charts
+      - client-server-gi-working
+  - name: Data Pipelines
+    priority: 4
+    projects:
+      - data-pipelines
+      - 3p-snapshot
+      - 3p-snapshot-improving-ingest
+  - name: Simulations & Education
+    priority: 5
+    projects:
+      - four-legged-simulation
+      - interview-pyspark
+  - name: Experimental & WIP
+    priority: 6
+    projects:
+      - 3p-sqlite-wip
+      - 3p-snapshot-working-here-on-ingest-while-3p-snapshot-works-on-actual-report-workflow
+      - '?'
+  - name: Database & Testing Tools
+    priority: 7
+    projects:
+      - '\'
+      - dot.mobi.ind
+      - euskadi_analisis
+  - name: Archive
+    priority: 8
+    projects:
+      - 3p-false-positives-histograms_old
+      - 3p-false-positives-histograms_trying_out
+      - 3p-scala
+hiddenProjects: []
