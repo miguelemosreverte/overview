@@ -348,7 +348,7 @@ function setupFileWatcher(projectName, projectPath) {
 
 // Handle WebSocket connections for both terminals and file watching
 wss.on('connection', (ws) => {
-  let currentProjectId = null;
+  ws.projectId = null; // Store project ID on WebSocket instance
   
   ws.on('message', (data) => {
     const msg = JSON.parse(data);
@@ -364,16 +364,19 @@ wss.on('connection', (ws) => {
     
     // Handle terminal messages
     if (msg.type === 'start' || msg.type === 'restore') {
-      currentProjectId = msg.id;
+      const projectId = msg.id; // Use const, not the outer variable
       const projectPath = msg.path;
       const projectName = msg.name;
       
+      // Store project ID on this WebSocket connection
+      ws.projectId = projectId;
+      
       // Check if we already have a terminal for this project
-      let term = terminals.get(currentProjectId);
+      let term = terminals.get(projectId);
       
       if (!term) {
         // Check if we should continue a previous session
-        const hasExistingSession = msg.isRestoring || terminalStates.get(currentProjectId);
+        const hasExistingSession = msg.isRestoring || terminalStates.get(projectId);
         const claudeArgs = hasExistingSession ? 
           ['--continue', '--dangerously-skip-permissions'] : 
           ['--dangerously-skip-permissions'];
@@ -387,8 +390,8 @@ wss.on('connection', (ws) => {
           env: process.env
         });
         
-        terminals.set(currentProjectId, term);
-        terminalStates.set(currentProjectId, {
+        terminals.set(projectId, term);
+        terminalStates.set(projectId, {
           projectPath,
           projectName,
           active: true,
@@ -396,10 +399,11 @@ wss.on('connection', (ws) => {
           buffer: []
         });
         
-        // Send output to WebSocket
+        // Send output to WebSocket - capture projectId in closure
+        const capturedProjectId = projectId;
         term.onData((data) => {
           // Store in buffer for reconnection
-          const state = terminalStates.get(currentProjectId);
+          const state = terminalStates.get(capturedProjectId);
           if (state) {
             if (!state.buffer) {
               state.buffer = [];
@@ -437,21 +441,21 @@ wss.on('connection', (ws) => {
             saveConversationState(state.projectPath, state.projectName);
           }
           
-          terminals.delete(currentProjectId);
-          terminalStates.delete(currentProjectId);
+          terminals.delete(capturedProjectId);
+          terminalStates.delete(capturedProjectId);
           
           wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN && client.clientType !== 'file-watcher') {
+            if (client.readyState === WebSocket.OPEN && client.projectId === capturedProjectId) {
               client.send(JSON.stringify({ 
                 type: 'exit',
-                id: currentProjectId 
+                id: capturedProjectId 
               }));
             }
           });
         });
       } else {
         // Terminal already exists - we're reconnecting
-        const state = terminalStates.get(currentProjectId);
+        const state = terminalStates.get(projectId);
         if (state) {
           if (!state.buffer) {
             state.buffer = [];
@@ -461,7 +465,7 @@ wss.on('connection', (ws) => {
           if (state.buffer.length > 0) {
             ws.send(JSON.stringify({
               type: 'output',
-              id: currentProjectId,
+              id: projectId,
               data: '\x1b[2J\x1b[H'
             }));
             
@@ -469,7 +473,7 @@ wss.on('connection', (ws) => {
               state.buffer.forEach(chunk => {
                 ws.send(JSON.stringify({
                   type: 'output',
-                  id: currentProjectId,
+                  id: projectId,
                   data: chunk
                 }));
               });
@@ -478,8 +482,7 @@ wss.on('connection', (ws) => {
         }
       }
       
-      ws.projectId = currentProjectId;
-      ws.send(JSON.stringify({ type: 'ready', id: currentProjectId }));
+      ws.send(JSON.stringify({ type: 'ready', id: projectId }));
       
     } else if (msg.type === 'input') {
       const term = terminals.get(msg.id || ws.projectId);
