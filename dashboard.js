@@ -1850,12 +1850,24 @@ const generateWorkspaceHTML = (projects, config) => {
             display: none;
         }
         
-        /* Minimal floating hamburger button */
-        .minimal-hamburger {
+        /* Minimal controls container */
+        .minimal-controls {
             position: fixed;
             top: 15px;
             left: 15px;
             z-index: 1000;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            transition: left 0.3s ease;
+        }
+        
+        .minimal-controls.sidebar-open {
+            left: 265px;
+        }
+        
+        /* Minimal floating hamburger button */
+        .minimal-hamburger {
             background: rgba(45, 45, 45, 0.7);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1877,8 +1889,59 @@ const generateWorkspaceHTML = (projects, config) => {
             border-color: rgba(255, 255, 255, 0.15);
         }
         
-        .minimal-hamburger.sidebar-open {
-            left: 265px;
+        /* Layout control buttons */
+        .layout-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            padding-left: 8px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            margin-left: 4px;
+        }
+        
+        .layout-btn {
+            background: rgba(45, 45, 45, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 4px;
+            transition: all 0.3s ease;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .layout-btn:hover {
+            background: rgba(45, 45, 45, 0.8);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .layout-btn.active {
+            background: rgba(45, 45, 45, 0.9);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .layout-icon {
+            width: 22px;
+            height: 22px;
+            display: flex;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .layout-icon.horizontal {
+            flex-direction: row;
+        }
+        
+        .layout-icon.vertical {
+            flex-direction: column;
+        }
+        
+        .layout-box {
+            background: transparent;
         }
         
         /* Layout toggle removed - can be accessed via keyboard shortcut */
@@ -2217,10 +2280,55 @@ const generateWorkspaceHTML = (projects, config) => {
 </head>
 <body>
     <div class="workspace">
-        <!-- Minimal Hamburger Button -->
-        <button class="minimal-hamburger" onclick="toggleSidebar()" id="hamburgerBtn">
-            <i class="fas fa-bars"></i>
-        </button>
+        <!-- Minimal Control Buttons -->
+        <div class="minimal-controls">
+            <button class="minimal-hamburger" onclick="toggleSidebar()" id="hamburgerBtn">
+                <i class="fas fa-bars"></i>
+            </button>
+            
+            <!-- Layout Control Buttons -->
+            <div class="layout-controls">
+                <!-- Horizontal Layouts -->
+                <button class="layout-btn" onclick="setLayout('horizontal', 70, 30)" title="Terminal 70% - Preview 30%">
+                    <div class="layout-icon horizontal">
+                        <div class="layout-box" style="width: 70%; border-right: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="width: 30%;"></div>
+                    </div>
+                </button>
+                <button class="layout-btn" onclick="setLayout('horizontal', 50, 50)" title="Terminal 50% - Preview 50%">
+                    <div class="layout-icon horizontal">
+                        <div class="layout-box" style="width: 50%; border-right: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="width: 50%;"></div>
+                    </div>
+                </button>
+                <button class="layout-btn" onclick="setLayout('horizontal', 30, 70)" title="Terminal 30% - Preview 70%">
+                    <div class="layout-icon horizontal">
+                        <div class="layout-box" style="width: 30%; border-right: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="width: 70%;"></div>
+                    </div>
+                </button>
+                
+                <!-- Vertical Layouts -->
+                <button class="layout-btn" onclick="setLayout('vertical', 70, 30)" title="Terminal 70% - Preview 30%">
+                    <div class="layout-icon vertical">
+                        <div class="layout-box" style="height: 70%; border-bottom: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="height: 30%;"></div>
+                    </div>
+                </button>
+                <button class="layout-btn" onclick="setLayout('vertical', 50, 50)" title="Terminal 50% - Preview 50%">
+                    <div class="layout-icon vertical">
+                        <div class="layout-box" style="height: 50%; border-bottom: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="height: 50%;"></div>
+                    </div>
+                </button>
+                <button class="layout-btn" onclick="setLayout('vertical', 30, 70)" title="Terminal 30% - Preview 70%">
+                    <div class="layout-icon vertical">
+                        <div class="layout-box" style="height: 30%; border-bottom: 1px solid rgba(255,255,255,0.3);"></div>
+                        <div class="layout-box" style="height: 70%;"></div>
+                    </div>
+                </button>
+            </div>
+        </div>
         
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
@@ -2357,19 +2465,61 @@ const generateWorkspaceHTML = (projects, config) => {
         // Layout functions
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
-            const hamburger = document.getElementById('hamburgerBtn');
+            const controls = document.querySelector('.minimal-controls');
             sidebarCollapsed = !sidebarCollapsed;
             
             if (sidebarCollapsed) {
                 sidebar.classList.add('collapsed');
-                hamburger.classList.remove('sidebar-open');
+                controls.classList.remove('sidebar-open');
             } else {
                 sidebar.classList.remove('collapsed');
-                hamburger.classList.add('sidebar-open');
+                controls.classList.add('sidebar-open');
             }
             
             // Save preference
             localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
+        }
+        
+        // Set specific layout with percentages
+        function setLayout(orientation, terminalPercent, previewPercent) {
+            const mainContent = document.getElementById('mainContent');
+            const centerPanel = document.querySelector('.center-panel');
+            const rightPanel = document.querySelector('.right-panel');
+            const splitter = document.getElementById('splitter');
+            
+            // Remove existing active states
+            document.querySelectorAll('.layout-btn').forEach(btn => btn.classList.remove('active'));
+            
+            // Add active state to clicked button
+            event.currentTarget.classList.add('active');
+            
+            if (orientation === 'vertical') {
+                mainContent.classList.add('vertical');
+                splitter.style.top = terminalPercent + '%';
+                splitter.style.left = '';
+                centerPanel.style.height = terminalPercent + '%';
+                centerPanel.style.width = '';
+                rightPanel.style.height = previewPercent + '%';
+                rightPanel.style.width = '';
+            } else {
+                mainContent.classList.remove('vertical');
+                splitter.style.left = terminalPercent + '%';
+                splitter.style.top = '';
+                centerPanel.style.width = terminalPercent + '%';
+                centerPanel.style.height = '';
+                rightPanel.style.width = previewPercent + '%';
+                rightPanel.style.height = '';
+            }
+            
+            // Save preferences
+            localStorage.setItem('layoutOrientation', orientation);
+            localStorage.setItem('terminalPercent', terminalPercent);
+            localStorage.setItem('previewPercent', previewPercent);
+            
+            // Trigger resize for terminals
+            if (window.currentTerminal && window.currentTerminal.fitAddon) {
+                setTimeout(() => window.currentTerminal.fitAddon.fit(), 100);
+            }
         }
         
         function toggleLayout() {
@@ -2403,20 +2553,44 @@ const generateWorkspaceHTML = (projects, config) => {
         // Load layout preferences
         function loadLayoutPreferences() {
             const savedSidebarState = localStorage.getItem('sidebarCollapsed');
-            const savedLayoutState = localStorage.getItem('layoutVertical');
-            const hamburger = document.getElementById('hamburgerBtn');
+            const savedOrientation = localStorage.getItem('layoutOrientation');
+            const savedTerminalPercent = localStorage.getItem('terminalPercent');
+            const savedPreviewPercent = localStorage.getItem('previewPercent');
+            const controls = document.querySelector('.minimal-controls');
             
-            // Set initial hamburger position
+            // Set initial controls position
             if (!savedSidebarState || savedSidebarState === 'false') {
-                hamburger.classList.add('sidebar-open');
+                controls.classList.add('sidebar-open');
             }
             
             if (savedSidebarState === 'true') {
                 toggleSidebar();
             }
             
-            if (savedLayoutState === 'true') {
-                toggleLayout();
+            // Restore saved layout if exists
+            if (savedOrientation && savedTerminalPercent && savedPreviewPercent) {
+                // Find and activate the corresponding button
+                const orientation = savedOrientation;
+                const terminal = parseInt(savedTerminalPercent);
+                const preview = parseInt(savedPreviewPercent);
+                
+                // Apply the layout without clicking a button
+                const mainContent = document.getElementById('mainContent');
+                const centerPanel = document.querySelector('.center-panel');
+                const rightPanel = document.querySelector('.right-panel');
+                const splitter = document.getElementById('splitter');
+                
+                if (orientation === 'vertical') {
+                    mainContent.classList.add('vertical');
+                    splitter.style.top = terminal + '%';
+                    centerPanel.style.height = terminal + '%';
+                    rightPanel.style.height = preview + '%';
+                } else {
+                    mainContent.classList.remove('vertical');
+                    splitter.style.left = terminal + '%';
+                    centerPanel.style.width = terminal + '%';
+                    rightPanel.style.width = preview + '%';
+                }
             }
         }
         
@@ -2621,6 +2795,7 @@ const generateWorkspaceHTML = (projects, config) => {
             // Add to pool
             terminalPool.set(projectId, terminal);
             currentTerminal = terminal;
+            window.currentTerminal = terminal; // Export for layout functions
             
             // Manage pool size - remove oldest if exceeds max
             if (terminalPool.size > MAX_POOL_SIZE) {
