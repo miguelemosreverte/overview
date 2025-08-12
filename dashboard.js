@@ -1649,12 +1649,16 @@ const generateGridHTML = (projects, config) => {
                     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
                     theme: {
                         background: '#1e1e1e',
-                        foreground: '#d4d4d4'
+                        foreground: '#d4d4d4',
+                        cursor: '#ffffff',
+                        selection: 'rgba(255, 255, 255, 0.2)'
                     },
                     convertEol: true,  // Convert CRLF to LF
                     scrollback: 10000, // Increase scrollback buffer
-                    cols: 80,
-                    rows: 30
+                    cols: 100,
+                    rows: 40,
+                    cursorStyle: 'block',
+                    allowTransparency: true
                 });
                 
                 const fitAddon = new FitAddon.FitAddon();
@@ -2090,6 +2094,16 @@ const generateWorkspaceHTML = (projects, config) => {
             overflow: hidden;
             position: relative;
             background: #1e1e1e;
+        }
+        
+        /* Make Claude UI elements less prominent */
+        .terminal-container .xterm-screen {
+            padding: 10px;
+        }
+        
+        /* Custom terminal colors for cleaner look */
+        .terminal-container .xterm .xterm-viewport {
+            background-color: #1e1e1e;
         }
         
         .terminal-placeholder {
@@ -2569,12 +2583,16 @@ const generateWorkspaceHTML = (projects, config) => {
                 fontFamily: 'Menlo, Monaco, "Courier New", monospace',
                 theme: {
                     background: '#1e1e1e',
-                    foreground: '#d4d4d4'
+                    foreground: '#d4d4d4',
+                    cursor: '#ffffff',
+                    selection: 'rgba(255, 255, 255, 0.2)'
                 },
                 convertEol: true,  // Convert CRLF to LF
                 scrollback: 10000, // Increase scrollback buffer
-                cols: 80,
-                rows: 30
+                cols: 100,
+                rows: 40,
+                cursorStyle: 'block',
+                allowTransparency: true
             });
             
             const fitAddon = new FitAddon.FitAddon();
