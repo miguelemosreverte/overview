@@ -1715,6 +1715,11 @@ const generateGridHTML = (projects, config) => {
             };
             
             terminal.onData((data) => {
+                // Filter out number keys 1-9 when not modified
+                if (data.length === 1 && data >= '1' && data <= '9') {
+                    // Skip sending number keys to terminal, they're used for shortcuts
+                    return;
+                }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'input', id: id, data: data }));
                 }
@@ -2403,7 +2408,7 @@ const generateWorkspaceHTML = (projects, config) => {
                         return '';
                       }
                       
-                      const shortcut = index < 3 ? `<span class="keyboard-shortcut">${index + 1}</span>` : '';
+                      const shortcut = index < 9 ? `<span class="keyboard-shortcut">${index + 1}</span>` : '';
                       
                       return `
                         <div class="project-item" data-project="${project.name}" data-path="${project.path}">
@@ -2988,6 +2993,11 @@ const generateWorkspaceHTML = (projects, config) => {
             };
             
             terminal.onData((data) => {
+                // Filter out number keys 1-9 when not modified
+                if (data.length === 1 && data >= '1' && data <= '9') {
+                    // Skip sending number keys to terminal, they're used for shortcuts
+                    return;
+                }
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'input',
@@ -3281,20 +3291,34 @@ const generateWorkspaceHTML = (projects, config) => {
         
         // Global keyboard shortcuts for projects 1-9
         document.addEventListener('keydown', (e) => {
-            // Number keys 1-9 to switch projects (works globally)
+            // Number keys 1-9 to switch projects (works globally, including in terminal)
             if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                // Don't interfere with input fields (except we allow it in terminal)
+                // Check if we're in a regular input field (not terminal)
                 const activeElement = document.activeElement;
                 const isInputField = activeElement.tagName === 'INPUT' || 
                                     activeElement.tagName === 'TEXTAREA' ||
                                     (activeElement.contentEditable === 'true');
                 
-                if (!isInputField) {
+                // Check if terminal has focus
+                const terminalHasFocus = activeElement.classList.contains('xterm-helper-textarea');
+                
+                if (!isInputField || terminalHasFocus) {
                     e.preventDefault();
+                    e.stopPropagation();
                     selectProjectByIndex(parseInt(e.key) - 1);
+                    
+                    // Re-focus terminal after switching if it had focus
+                    if (terminalHasFocus) {
+                        setTimeout(() => {
+                            const terminalTextarea = document.querySelector('.xterm-helper-textarea');
+                            if (terminalTextarea) {
+                                terminalTextarea.focus();
+                            }
+                        }, 100);
+                    }
                 }
             }
-        });
+        }, true);  // Use capture phase to intercept before terminal
         
         initialize();
     </script>
