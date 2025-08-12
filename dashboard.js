@@ -2157,6 +2157,13 @@ const generateWorkspaceHTML = (projects, config) => {
             overflow: hidden;
             position: relative;
             background: #1e1e1e;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .terminal-container #terminal {
+            width: 100%;
+            height: 100%;
         }
         
         /* Make Claude UI elements less prominent */
@@ -2216,6 +2223,7 @@ const generateWorkspaceHTML = (projects, config) => {
             height: 100%;
             border: none;
             background: white;
+            display: block;
         }
         
         .preview-placeholder {
@@ -2722,6 +2730,15 @@ const generateWorkspaceHTML = (projects, config) => {
             // Update preview
             updatePreview(projectName, projectPath);
             
+            // Ensure everything fits properly after selection
+            setTimeout(() => {
+                if (window.currentTerminal && window.currentTerminal.fitAddon) {
+                    window.currentTerminal.fitAddon.fit();
+                }
+                // Trigger resize to fix preview width
+                window.dispatchEvent(new Event('resize'));
+            }, 150);
+            
             // Setup file watcher if needed
             if (fileWs && fileWs.readyState === WebSocket.OPEN) {
                 fileWs.send(JSON.stringify({
@@ -3085,6 +3102,16 @@ const generateWorkspaceHTML = (projects, config) => {
             // Load panel sizes after layout is set
             setTimeout(() => {
                 loadPanelSizes();
+                
+                // Force resize to ensure panels occupy full space
+                window.dispatchEvent(new Event('resize'));
+                
+                // Also fit any existing terminal
+                if (window.currentTerminal && window.currentTerminal.fitAddon) {
+                    setTimeout(() => {
+                        window.currentTerminal.fitAddon.fit();
+                    }, 100);
+                }
             }, 100);
             
             // Try to restore workspace session first
