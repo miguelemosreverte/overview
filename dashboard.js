@@ -401,6 +401,29 @@ wss.on('connection', (ws) => {
         
         // Send output to WebSocket - capture projectId in closure
         const capturedProjectId = projectId;
+        
+        // Buffer for collecting rapid updates (helps with ANSI sequences)
+        let outputBuffer = '';
+        let outputTimer = null;
+        
+        const flushOutput = () => {
+          if (outputBuffer) {
+            const dataToSend = outputBuffer;
+            outputBuffer = '';
+            
+            // Broadcast to all connected clients watching this terminal
+            wss.clients.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN && client.projectId === capturedProjectId) {
+                client.send(JSON.stringify({ 
+                  type: 'output', 
+                  id: capturedProjectId,
+                  data: dataToSend
+                }));
+              }
+            });
+          }
+        };
+        
         term.onData((data) => {
           // Store in buffer for reconnection
           const state = terminalStates.get(capturedProjectId);
@@ -421,16 +444,22 @@ wss.on('connection', (ws) => {
             }
           }
           
-          // Broadcast to all connected clients watching this terminal
-          wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN && client.projectId === capturedProjectId) {
-              client.send(JSON.stringify({ 
-                type: 'output', 
-                id: capturedProjectId,
-                data 
-              }));
-            }
-          });
+          // Buffer output to collect complete ANSI sequences
+          outputBuffer += data;
+          
+          // Clear existing timer
+          if (outputTimer) {
+            clearTimeout(outputTimer);
+          }
+          
+          // Flush immediately for newlines or when buffer gets large
+          // Small delay helps collect complete escape sequences
+          if (data.includes('\n') || outputBuffer.length > 1000) {
+            flushOutput();
+          } else {
+            // Small delay to collect complete ANSI escape sequences
+            outputTimer = setTimeout(flushOutput, 10);
+          }
         });
         
         // Handle exit
@@ -1414,7 +1443,11 @@ const generateGridHTML = (projects, config) => {
                     theme: {
                         background: '#1e1e1e',
                         foreground: '#d4d4d4'
-                    }
+                    },
+                    convertEol: true,  // Convert CRLF to LF
+                    scrollback: 10000, // Increase scrollback buffer
+                    cols: 80,
+                    rows: 30
                 });
                 
                 const fitAddon = new FitAddon.FitAddon();
@@ -2404,7 +2437,11 @@ const generateWorkspaceHTML = (projects, config) => {
                 theme: {
                     background: '#1e1e1e',
                     foreground: '#d4d4d4'
-                }
+                },
+                convertEol: true,  // Convert CRLF to LF
+                scrollback: 10000, // Increase scrollback buffer
+                cols: 80,
+                rows: 30
             });
             
             const fitAddon = new FitAddon.FitAddon();
