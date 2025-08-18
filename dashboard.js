@@ -943,14 +943,15 @@ wss.on('connection', (ws) => {
           if (state) {
             saveConversationState(state.projectPath, state.projectName);
             
-            // Preserve AI preference even when terminal exits
-            if (state.preferredAI) {
+            // Preserve AI preference and conversation context even when terminal exits
+            if (state.preferredAI || state.conversationContext) {
               terminalStates.set(capturedProjectId, {
                 projectPath: state.projectPath,
                 projectName: state.projectName,
                 hasSession: false,
                 preferredAI: state.preferredAI,
-                aiType: null
+                aiType: null,
+                conversationContext: state.conversationContext // Preserve the context!
               });
             } else {
               terminalStates.delete(capturedProjectId);
