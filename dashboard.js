@@ -13,6 +13,7 @@ const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
+app.use(express.static(__dirname)); // Serve static files including images
 const PORT = 3000;
 const DESKTOP_PATH = '/Users/miguel_lemos/Desktop';
 const CLAUDE_STATUS_DIR = path.join(DESKTOP_PATH, '.claude');
@@ -184,13 +185,26 @@ async function getRecentConversations(projectId, count = 3) {
     const conversationFile = path.join(CONVERSATIONS_DIR, `${projectId}.json`);
     
     if (!require('fs').existsSync(conversationFile)) {
+      // If no file exists, return empty array
       return [];
     }
     
     const data = await fs.readFile(conversationFile, 'utf-8');
-    const conversations = JSON.parse(data);
+    let conversations = JSON.parse(data);
     
-    // Return last N exchanges
+    // Filter out any messages with escape sequences
+    conversations = conversations.filter(msg => {
+      const content = msg.content || '';
+      // Skip messages that contain terminal escape codes
+      return !content.includes('[2K') && 
+             !content.includes('[1A') && 
+             !content.includes('[?') &&
+             !content.includes('[O') &&
+             !content.includes('[I') &&
+             content.length > 5;
+    });
+    
+    // Return last N clean exchanges
     return conversations.slice(-count);
   } catch (error) {
     console.error('Error loading conversations:', error);
@@ -817,7 +831,8 @@ wss.on('connection', (ws) => {
         
         // Check if user has a preference
         const existingState = terminalStates.get(projectId);
-        const preferredAI = existingState?.preferredAI;
+        const lastAIType = existingState?.aiType;
+        const preferredAI = existingState?.preferredAI || lastAIType; // Use last active AI as a preference
         
         console.log(`Project ${projectId} preference: ${preferredAI}`);
         
@@ -2942,21 +2957,26 @@ const generateWorkspaceHTML = (projects, config) => {
             <!-- AI Provider Buttons (positioned at the right) -->
             <div class="ai-controls" style="margin-left: auto; display: flex; gap: 8px; margin-right: 16px;">
                 <button class="ai-btn claude-btn" onclick="switchAIProvider('claude')" title="Switch to Claude (Anthropic)">
-                    <!-- Anthropic Claude icon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#FF8400">
-                        <path d="M17.5 3C15.6 3 14 4.6 14 6.5c0 .4.1.8.2 1.2L10 12l-4.2-4.3c.1-.4.2-.8.2-1.2C6 4.6 4.4 3 2.5 3S-1 4.6-1 6.5 .6 10 2.5 10c.4 0 .8-.1 1.2-.2L8 14l-4.3 4.2c-.4-.1-.8-.2-1.2-.2C.6 18-1 19.6-1 21.5S.6 25 2.5 25s3.5-1.6 3.5-3.5c0-.4-.1-.8-.2-1.2L10 16l4.2 4.3c-.1.4-.2.8-.2 1.2 0 1.9 1.6 3.5 3.5 3.5s3.5-1.6 3.5-3.5-1.6-3.5-3.5-3.5c-.4 0-.8.1-1.2.2L12 14l4.3-4.2c.4.1.8.2 1.2.2 1.9 0 3.5-1.6 3.5-3.5S19.4 3 17.5 3z"/>
-                    </svg>
+                    <!-- Official Anthropic Claude icon -->
+                    <img src="anthropic-24.png" width="20" height="20" alt="Claude">
                 </button>
                 <button class="ai-btn gemini-btn" onclick="switchAIProvider('gemini')" title="Switch to Gemini (Google)">
-                    <!-- Google Gemini icon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
                         <defs>
-                            <linearGradient id="gemini-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" style="stop-color:#4285F4"/>
-                                <stop offset="100%" style="stop-color:#9B72CB"/>
+                            <linearGradient id="a" x1="32.963" x2="222.32" y1="222.32" y2="32.963" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#89B5F7" offset="0"/>
+                            <stop stop-color="#4285F4" offset=".13"/>
+                            <stop stop-color="#C684EE" offset=".39"/>
+                            <stop stop-color="#7844C7" offset=".5"/>
+                            <stop stop-color="#C684EE" offset=".61"/>
+                            <stop stop-color="#4285F4" offset=".87"/>
+                            <stop stop-color="#89B5F7" offset="1"/>
                             </linearGradient>
                         </defs>
-                        <path fill="url(#gemini-gradient)" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                        <path d="M128 256a128 128 0 1 0 0-256 128 128 0 0 0 0 256Z" fill="url(#a)"/>
+                        <path d="M128 234.67a106.67 106.67 0 1 0 0-213.34 106.67 106.67 0 0 0 0 213.34Z" fill="#fff"/>
+                        <path d="M128 213.33a85.33 85.33 0 1 0 0-170.66 85.33 85.33 0 0 0 0 170.66Z" fill="url(#a)"/>
+                        <path d="m166.4 153.6-12.8-22.17-12.8 22.17h-25.6l25.6-44.34-25.6-44.33h25.6l12.8 22.17 12.8-22.17h25.6l-25.6 44.33 25.6 44.34Z" fill="#fff"/>
                     </svg>
                 </button>
                 <span class="ai-status" id="aiStatus" style="color: #888; font-size: 11px; align-self: center;"></span>

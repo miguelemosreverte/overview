@@ -19,10 +19,7 @@ This document defines the Valve Protocol - a system ensuring that all code chang
 - [ ] Bundle Size: _KB
 
 ### Goals for This Session
-- [ ] Primary Goal: 
-- [ ] Secondary Goals:
-  - [ ] 
-  - [ ] 
+- [ ] Let's define the goals for this session together. What is the primary objective? 
 
 ### Completed Improvements
 <!-- AI agents should update this section after each successful change -->

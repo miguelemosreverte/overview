@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Anthropic brand orange circle -->
+  <circle cx="50" cy="50" r="45" fill="#E85D00"/>
+  
+  <!-- Simplified asterisk-like pattern -->
+  <g transform="translate(50, 50)">
+    <!-- Create 8 evenly spaced rays -->
+    <g stroke="white" stroke-width="3" stroke-linecap="round" fill="none">
+      <path d="M 0,0 L 0,-25"/>
+      <path d="M 0,0 L 17.68,-17.68"/>
+      <path d="M 0,0 L 25,0"/>
+      <path d="M 0,0 L 17.68,17.68"/>
+      <path d="M 0,0 L 0,25"/>
+      <path d="M 0,0 L -17.68,17.68"/>
+      <path d="M 0,0 L -25,0"/>
+      <path d="M 0,0 L -17.68,-17.68"/>
+    </g>
+  </g>
+  
+  <!-- Center white dot -->
+  <circle cx="50" cy="50" r="5" fill="white"/>
+</svg>

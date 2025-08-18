@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Orange circle background -->
+  <circle cx="50" cy="50" r="45" fill="#D55F00"/>
+  
+  <!-- White radiating lines from center -->
+  <g stroke="white" stroke-width="3" stroke-linecap="round">
+    <!-- Top -->
+    <line x1="50" y1="50" x2="50" y2="20"/>
+    <!-- Top-right -->
+    <line x1="50" y1="50" x2="71" y2="29"/>
+    <!-- Right -->
+    <line x1="50" y1="50" x2="80" y2="50"/>
+    <!-- Bottom-right -->
+    <line x1="50" y1="50" x2="71" y2="71"/>
+    <!-- Bottom -->
+    <line x1="50" y1="50" x2="50" y2="80"/>
+    <!-- Bottom-left -->
+    <line x1="50" y1="50" x2="29" y2="71"/>
+    <!-- Left -->
+    <line x1="50" y1="50" x2="20" y2="50"/>
+    <!-- Top-left -->
+    <line x1="50" y1="50" x2="29" y2="29"/>
+  </g>
+  
+  <!-- Center dot -->
+  <circle cx="50" cy="50" r="4" fill="white"/>
+</svg>

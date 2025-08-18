@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Anthropic orange circle background -->
+  <circle cx="50" cy="50" r="45" fill="#FF6B00"/>
+  
+  <!-- White starburst pattern with varying line lengths -->
+  <g stroke="white" stroke-width="2.5" stroke-linecap="round">
+    <!-- Main rays (longer) -->
+    <line x1="50" y1="50" x2="50" y2="15" opacity="1"/>
+    <line x1="50" y1="50" x2="85" y2="50" opacity="1"/>
+    <line x1="50" y1="50" x2="50" y2="85" opacity="1"/>
+    <line x1="50" y1="50" x2="15" y2="50" opacity="1"/>
+    
+    <!-- Diagonal rays (medium) -->
+    <line x1="50" y1="50" x2="75" y2="25" opacity="0.9"/>
+    <line x1="50" y1="50" x2="75" y2="75" opacity="0.9"/>
+    <line x1="50" y1="50" x2="25" y2="75" opacity="0.9"/>
+    <line x1="50" y1="50" x2="25" y2="25" opacity="0.9"/>
+    
+    <!-- Smaller intermediate rays -->
+    <line x1="50" y1="50" x2="67" y2="33" opacity="0.7" stroke-width="2"/>
+    <line x1="50" y1="50" x2="67" y2="67" opacity="0.7" stroke-width="2"/>
+    <line x1="50" y1="50" x2="33" y2="67" opacity="0.7" stroke-width="2"/>
+    <line x1="50" y1="50" x2="33" y2="33" opacity="0.7" stroke-width="2"/>
+  </g>
+  
+  <!-- Small center circle -->
+  <circle cx="50" cy="50" r="3" fill="white"/>
+</svg>
