@@ -843,25 +843,34 @@ wss.on('connection', (ws) => {
           console.log(`Injecting conversation context from ${hasContext.fromProvider} to ${aiType}`);
           
           // Wait for the AI to fully initialize before sending context
+          // Need to wait longer for the prompt to appear
           setTimeout(() => {
             // Extract just the text content, removing ANSI escape codes
             const cleanContext = hasContext.lastExchange
               .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI color codes
-              .slice(-800); // Get last 800 chars for more context
+              .slice(-500); // Reduce to 500 chars to keep it concise
             
-            // Format context message based on AI type
-            let contextMessage;
-            if (aiType === 'gemini') {
-              // Gemini format - direct and concise
-              contextMessage = `Context: Switching from ${hasContext.fromProvider}. Previous conversation summary:\n${cleanContext}\n\nAcknowledge this context and continue where we left off. Full history in .${hasContext.fromProvider} session files.`;
-            } else {
-              // Claude format
-              contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType}. Here's our recent conversation:\n\n${cleanContext}\n\nPlease acknowledge this context. Full history available in .${hasContext.fromProvider} session files.`;
-            }
+            // Format a shorter, simpler context message
+            const contextMessage = `Continuing from ${hasContext.fromProvider}. Last context: "${cleanContext.slice(-200)}"`;
             
-            // Send the context as input to the terminal
-            term.write(contextMessage);
-            term.write('\r'); // Send Enter to submit the message
+            // Send the context as input to the PTY
+            console.log(`Sending context to ${aiType}: ${contextMessage.length} chars`);
+            
+            // Type the message character by character with small delays
+            let charIndex = 0;
+            const typeInterval = setInterval(() => {
+              if (charIndex < contextMessage.length) {
+                term.write(contextMessage[charIndex]);
+                charIndex++;
+              } else {
+                clearInterval(typeInterval);
+                // Send Enter after a small delay
+                setTimeout(() => {
+                  term.write('\r');
+                  console.log('Context sent with Enter key');
+                }, 100);
+              }
+            }, 10); // Type each character with 10ms delay
             
             // Clear the context after using it
             const state = terminalStates.get(projectId);
@@ -870,7 +879,7 @@ wss.on('connection', (ws) => {
               terminalStates.set(projectId, state);
               saveTerminalStatesToDisk();
             }
-          }, 3500); // Wait 3.5 seconds for AI to fully initialize
+          }, 5000); // Wait 5 seconds for AI to be fully ready with prompt
         }
         
         // Send output to WebSocket - capture projectId in closure
