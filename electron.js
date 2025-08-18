@@ -1,13 +1,67 @@
 const { app, BrowserWindow, Menu, shell, nativeImage } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const http = require('http');
 
 let mainWindow;
 let serverProcess;
+let isUsingExistingServer = false;
+
+// Check if server is already running
+function checkServerRunning() {
+  return new Promise((resolve) => {
+    const options = {
+      host: 'localhost',
+      port: 3000,
+      path: '/',
+      method: 'GET',
+      timeout: 1000
+    };
+
+    const req = http.request(options, (res) => {
+      // Server is running
+      resolve(true);
+    });
+
+    req.on('error', () => {
+      // Server is not running
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+
+    req.end();
+  });
+}
 
 // Start the Express server
 function startServer() {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    // First check if server is already running
+    const serverRunning = await checkServerRunning();
+    
+    if (serverRunning) {
+      console.log('🔗 Connecting to existing server on port 3000...');
+      isUsingExistingServer = true;
+      resolve();
+      return;
+    }
+
+    console.log('🚀 Starting new server instance...');
+    
+    // In production, we need to handle the fact that files are in an asar archive
+    // So we'll require the dashboard directly instead of spawning it
+    if (app.isPackaged) {
+      // For packaged app, run the server in the same process
+      require('./dashboard.js');
+      setTimeout(() => resolve(), 2000); // Give server time to start
+      return;
+    }
+    
+    // For development, spawn as separate process
     serverProcess = spawn('node', [path.join(__dirname, 'dashboard.js')], {
       cwd: __dirname,
       env: { ...process.env, ELECTRON_RUN: 'true' }
@@ -159,9 +213,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (serverProcess) {
+  // Only kill server if we started it ourselves
+  if (serverProcess && !isUsingExistingServer) {
     console.log('Stopping server...');
     serverProcess.kill();
+  } else if (isUsingExistingServer) {
+    console.log('Leaving existing server running...');
   }
   if (process.platform !== 'darwin') {
     app.quit();
@@ -175,14 +232,16 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  if (serverProcess) {
+  // Only kill server if we started it ourselves
+  if (serverProcess && !isUsingExistingServer) {
     serverProcess.kill();
   }
 });
 
 // Handle server process cleanup
 process.on('exit', () => {
-  if (serverProcess) {
+  // Only kill server if we started it ourselves
+  if (serverProcess && !isUsingExistingServer) {
     serverProcess.kill();
   }
 });

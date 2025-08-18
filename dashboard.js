@@ -9,6 +9,7 @@ const pty = require('node-pty');
 const http = require('http');
 const yaml = require('js-yaml');
 const chokidar = require('chokidar');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
@@ -67,6 +68,44 @@ async function ensureClaudeDir() {
     await fs.mkdir(CLAUDE_STATUS_DIR, { recursive: true });
   } catch (error) {
     console.error('Error creating .claude directory:', error);
+  }
+}
+
+// Path for persistent terminal states
+const TERMINAL_STATES_FILE = path.join(CLAUDE_STATUS_DIR, 'terminal-states.json');
+
+// Save terminal states to disk
+async function saveTerminalStatesToDisk() {
+  try {
+    const states = {};
+    for (const [id, state] of terminalStates.entries()) {
+      // Only save essential data (not the terminal instance)
+      states[id] = {
+        projectPath: state.projectPath,
+        projectName: state.projectName,
+        hasSession: true
+      };
+    }
+    await fs.writeFile(TERMINAL_STATES_FILE, JSON.stringify(states, null, 2));
+  } catch (error) {
+    console.error('Error saving terminal states:', error);
+  }
+}
+
+// Load terminal states from disk
+async function loadTerminalStatesFromDisk() {
+  try {
+    const data = await fs.readFile(TERMINAL_STATES_FILE, 'utf-8');
+    const states = JSON.parse(data);
+    for (const [id, state] of Object.entries(states)) {
+      terminalStates.set(id, state);
+    }
+    console.log('Loaded terminal states:', terminalStates.size);
+  } catch (error) {
+    // File might not exist on first run
+    if (error.code !== 'ENOENT') {
+      console.error('Error loading terminal states:', error);
+    }
   }
 }
 
@@ -525,6 +564,9 @@ function stopNodeServer(projectName) {
   }
 }
 
+// Store file content hashes to detect actual changes
+const fileContentHashes = new Map();
+
 // Setup file watcher for a project
 function setupFileWatcher(projectName, projectPath) {
   const watcherId = projectName;
@@ -537,22 +579,51 @@ function setupFileWatcher(projectName, projectPath) {
   
   const indexPath = path.join(projectPath, 'index.html');
   
+  // Get initial content hash
+  try {
+    const content = require('fs').readFileSync(indexPath, 'utf-8');
+    const hash = crypto.createHash('md5').update(content).digest('hex');
+    fileContentHashes.set(indexPath, hash);
+  } catch (error) {
+    // File might not exist yet
+    console.log(`File ${indexPath} not found yet`);
+  }
+  
   const watcher = chokidar.watch(indexPath, {
     persistent: true,
     ignoreInitial: true
   });
   
   watcher.on('change', () => {
-    // Notify all connected file watcher clients
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN && client.clientType === 'file-watcher') {
-        client.send(JSON.stringify({
-          type: 'file-changed',
-          project: projectName,
-          file: 'index.html'
-        }));
+    try {
+      // Read the new content and compute hash
+      const content = require('fs').readFileSync(indexPath, 'utf-8');
+      const newHash = crypto.createHash('md5').update(content).digest('hex');
+      
+      // Get previous hash
+      const oldHash = fileContentHashes.get(indexPath);
+      
+      // Only notify if content actually changed
+      if (newHash !== oldHash) {
+        fileContentHashes.set(indexPath, newHash);
+        console.log(`Content changed for ${projectName}/index.html`);
+        
+        // Notify all connected file watcher clients
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN && client.clientType === 'file-watcher') {
+            client.send(JSON.stringify({
+              type: 'file-changed',
+              project: projectName,
+              file: 'index.html'
+            }));
+          }
+        });
+      } else {
+        console.log(`File touched but content unchanged for ${projectName}/index.html`);
       }
-    });
+    } catch (error) {
+      console.error(`Error reading file ${indexPath}:`, error);
+    }
   });
   
   fileWatchers.set(watcherId, watcher);
@@ -588,19 +659,157 @@ wss.on('connection', (ws) => {
       let term = terminals.get(projectId);
       
       if (!term) {
+        // Check if project needs Valve Protocol upgrade
+        const claudeMdPath = path.join(projectPath, 'CLAUDE.md');
+        let needsUpgrade = false;
+        
+        try {
+          if (require('fs').existsSync(claudeMdPath)) {
+            const content = require('fs').readFileSync(claudeMdPath, 'utf-8');
+            if (!content.includes('Valve Protocol')) {
+              needsUpgrade = true;
+              console.log(`⚠️  Project ${projectName} has legacy CLAUDE.md - needs Valve Protocol upgrade`);
+              
+              // Auto-upgrade the file
+              const upgradeScript = path.join(__dirname, 'upgrade-ai-context.sh');
+              if (require('fs').existsSync(upgradeScript)) {
+                const { execSync } = require('child_process');
+                try {
+                  execSync(`${upgradeScript} "${projectPath}"`, { stdio: 'pipe' });
+                  console.log(`✅ Automatically upgraded ${projectName} to Valve Protocol`);
+                } catch (e) {
+                  console.log(`❌ Could not auto-upgrade: ${e.message}`);
+                }
+              }
+            }
+          } else {
+            // No CLAUDE.md exists, create one with Valve Protocol
+            const initScript = path.join(__dirname, 'init-ai-context.sh');
+            if (require('fs').existsSync(initScript)) {
+              const { execSync } = require('child_process');
+              try {
+                execSync(`cd "${projectPath}" && ${initScript}`, { stdio: 'pipe' });
+                console.log(`✅ Initialized ${projectName} with Valve Protocol`);
+              } catch (e) {
+                console.log(`❌ Could not initialize: ${e.message}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`Error checking Valve Protocol status: ${e.message}`);
+        }
+        
         // Only use --continue if explicitly restoring AND we had a previous session
         const shouldContinue = msg.isRestoring && terminalStates.get(projectId);
         const claudeArgs = shouldContinue ? 
           ['--continue', '--dangerously-skip-permissions'] : 
           ['--dangerously-skip-permissions'];
         
+        // Find AI CLI command - try claude first, then gemini as fallback
+        const claudePaths = [
+          '/usr/local/bin/claude',
+          '/opt/homebrew/bin/claude',
+          process.env.HOME + '/.nvm/versions/node/v18.20.3/bin/claude',
+          process.env.HOME + '/.local/bin/claude',
+          'claude' // fallback to PATH
+        ];
+        
+        const geminiPaths = [
+          '/opt/homebrew/bin/gemini',
+          '/usr/local/bin/gemini',
+          process.env.HOME + '/.npm-global/bin/gemini',
+          process.env.HOME + '/node_modules/.bin/gemini',
+          'gemini' // fallback to PATH
+        ];
+        
+        let aiCommand = null;
+        let aiType = null;
+        let aiArgs = [];
+        
+        // Check if user has a preference
+        const existingState = terminalStates.get(projectId);
+        const preferredAI = existingState?.preferredAI;
+        
+        if (preferredAI === 'gemini') {
+          // User wants Gemini specifically
+          for (const path of geminiPaths) {
+            if (require('fs').existsSync(path)) {
+              aiCommand = path;
+              aiType = 'gemini';
+              aiArgs = shouldContinue ? ['--checkpoint', 'last'] : [];
+              console.log('Using preferred Gemini at:', aiCommand);
+              break;
+            }
+          }
+          // If Gemini not found but was preferred, show error
+          if (!aiCommand) {
+            console.error('Gemini requested but not found');
+          }
+        } else if (preferredAI === 'claude') {
+          // User wants Claude specifically
+          for (const path of claudePaths) {
+            if (require('fs').existsSync(path)) {
+              aiCommand = path;
+              aiType = 'claude';
+              aiArgs = claudeArgs;
+              console.log('Using preferred Claude at:', aiCommand);
+              break;
+            }
+          }
+          // If Claude not found but was preferred, show error
+          if (!aiCommand) {
+            console.error('Claude requested but not found');
+          }
+        } else {
+          // No preference or 'auto' - try Claude first, then Gemini
+          for (const path of claudePaths) {
+            if (require('fs').existsSync(path)) {
+              aiCommand = path;
+              aiType = 'claude';
+              aiArgs = claudeArgs;
+              console.log('Found claude at:', aiCommand);
+              break;
+            }
+          }
+          
+          // If Claude not found, try Gemini
+          if (!aiCommand) {
+            for (const path of geminiPaths) {
+              if (require('fs').existsSync(path)) {
+                aiCommand = path;
+                aiType = 'gemini';
+                aiArgs = shouldContinue ? ['--checkpoint', 'last'] : [];
+                console.log('Claude not found, using Gemini at:', aiCommand);
+                break;
+              }
+            }
+          }
+        }
+        
+        // If neither found, default to claude (will error but with clear message)
+        if (!aiCommand) {
+          aiCommand = 'claude';
+          aiType = 'claude';
+          aiArgs = claudeArgs;
+          console.error('Neither Claude nor Gemini found in PATH');
+        }
+        
         // Create new PTY process
-        term = pty.spawn('claude', claudeArgs, {
+        term = pty.spawn(aiCommand, aiArgs, {
           name: 'xterm-256color',
           cols: 80,
           rows: 30,
           cwd: projectPath,
-          env: process.env
+          env: {
+            ...process.env,
+            PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/.local/bin:${process.env.PATH}`,
+            // Use Google Code Assist authentication for Gemini
+            GOOGLE_GENAI_USE_GCA: aiType === 'gemini' ? 'true' : '',
+            // Keep other auth methods as fallback
+            GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+            GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+            GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || ''
+          }
         });
         
         terminals.set(projectId, term);
@@ -609,8 +818,11 @@ wss.on('connection', (ws) => {
           projectName,
           active: true,
           startTime: new Date(),
-          buffer: []
+          buffer: [],
+          hasSession: true,
+          aiType: aiType  // Track which AI is being used
         });
+        saveTerminalStatesToDisk(); // Save state when new session created
         
         // Send output to WebSocket - capture projectId in closure
         const capturedProjectId = projectId;
@@ -685,6 +897,7 @@ wss.on('connection', (ws) => {
           
           terminals.delete(capturedProjectId);
           terminalStates.delete(capturedProjectId);
+          saveTerminalStatesToDisk(); // Save state when session ends
           
           wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN && client.projectId === capturedProjectId) {
@@ -727,8 +940,132 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ type: 'ready', id: projectId }));
       
     } else if (msg.type === 'input') {
-      const term = terminals.get(msg.id || ws.projectId);
-      if (term) {
+      const projectId = msg.id || ws.projectId;
+      const term = terminals.get(projectId);
+      const state = terminalStates.get(projectId);
+      
+      if (term && state) {
+        // Initialize command buffer if not exists
+        if (!state.commandBuffer) {
+          state.commandBuffer = '';
+        }
+        
+        console.log('Input received:', JSON.stringify(msg.data), 'Buffer:', state.commandBuffer);
+        
+        // Check if this is Enter key (carriage return)
+        if (msg.data === '\r' || msg.data === '\n') {
+          // Process the buffered command
+          const command = state.commandBuffer.trim();
+          console.log('Processing command:', command);
+          
+          // Check for slash commands
+          if (command === '/claude' || command === '/gemini' || command === '/ai') {
+            // Handle AI switching commands
+            if (command === '/claude') {
+              // Send feedback to user
+              term.write('\r\n\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
+              term.write('\x1b[90mPlease restart the terminal to use Claude\x1b[0m\r\n');
+              
+              // Set preference for Claude
+              state.preferredAI = 'claude';
+              terminalStates.set(projectId, state);
+              saveTerminalStatesToDisk();
+              
+              // Kill current terminal to force restart
+              setTimeout(() => {
+                term.kill();
+                terminals.delete(projectId);
+              }, 1000);
+              
+            } else if (command === '/gemini') {
+              // Send feedback to user
+              term.write('\r\n\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
+              term.write('\x1b[90mPlease restart the terminal to use Gemini\x1b[0m\r\n');
+              
+              // Set preference for Gemini
+              state.preferredAI = 'gemini';
+              terminalStates.set(projectId, state);
+              saveTerminalStatesToDisk();
+              
+              // Kill current terminal to force restart
+              setTimeout(() => {
+                term.kill();
+                terminals.delete(projectId);
+              }, 1000);
+              
+            } else if (command === '/ai') {
+              // Show current AI status
+              const currentAI = state.aiType || 'unknown';
+              const preferredAI = state.preferredAI || 'auto';
+              const statusMsg = `\r\n\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n` +
+                              `\x1b[32mCurrent:\x1b[0m ${currentAI}\r\n` +
+                              `\x1b[32mPreferred:\x1b[0m ${preferredAI}\r\n\r\n` +
+                              `\x1b[36m━━━ Commands ━━━\x1b[0m\r\n` +
+                              `  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n` +
+                              `  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n` +
+                              `  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n`;
+              
+              term.write(statusMsg);
+              
+              // Clear the buffer and don't send to AI
+              state.commandBuffer = '';
+              return;
+            }
+            
+            // Clear buffer after slash command
+            state.commandBuffer = '';
+            return;
+          }
+          
+          // Not a slash command - send the whole buffered input if it was a slash attempt
+          if (state.commandBuffer.startsWith('/')) {
+            // It was a slash but not a valid command, send it all to AI
+            term.write(state.commandBuffer + msg.data);
+          } else {
+            // Normal input, just send Enter
+            term.write(msg.data);
+          }
+          state.commandBuffer = '';
+          
+        } else if (msg.data === '\x7f' || msg.data === '\b') {
+          // Backspace - remove last character from buffer
+          if (state.commandBuffer.length > 0) {
+            state.commandBuffer = state.commandBuffer.slice(0, -1);
+          }
+          
+          // Handle backspace display
+          if (state.commandBuffer.startsWith('/') || state.commandBuffer === '') {
+            // Echo backspace to client only
+            ws.send(JSON.stringify({
+              type: 'output',
+              id: projectId,
+              data: '\b \b'  // Backspace, space, backspace (clears character)
+            }));
+          } else {
+            // Normal backspace, send to AI
+            term.write(msg.data);
+          }
+          
+        } else {
+          // Add character to buffer
+          state.commandBuffer += msg.data;
+          
+          // Only pass to terminal if not building a slash command
+          if (state.commandBuffer.startsWith('/')) {
+            // Building a potential slash command - don't send to AI yet
+            // Just echo to client's screen
+            ws.send(JSON.stringify({
+              type: 'output',
+              id: projectId,
+              data: msg.data
+            }));
+          } else {
+            // Normal text, pass through to AI
+            term.write(msg.data);
+          }
+        }
+      } else if (term) {
+        // No state, just pass through
         term.write(msg.data);
       }
     } else if (msg.type === 'resize') {
@@ -741,6 +1078,22 @@ wss.on('connection', (ws) => {
       if (state) {
         state.minimized = true;
         saveConversationState(state.projectPath, state.projectName);
+        saveTerminalStatesToDisk(); // Save state when minimized
+      }
+    } else if (msg.type === 'switch-ai') {
+      // Handle AI switching from client
+      const state = terminalStates.get(msg.id);
+      if (state) {
+        state.preferredAI = msg.ai;
+        terminalStates.set(msg.id, state);
+        saveTerminalStatesToDisk();
+        
+        // Kill current terminal to force restart with new AI
+        const term = terminals.get(msg.id);
+        if (term) {
+          term.kill();
+          terminals.delete(msg.id);
+        }
       }
     }
   });
@@ -1728,7 +2081,7 @@ const generateGridHTML = (projects, config) => {
                         
                         terminal.write(filteredData);
                     } else if (msg.type === 'exit') {
-                        terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
+                        terminal.write('\\r\\n\\x1b[31mAI session ended.\\x1b[0m\\r\\n');
                         setTimeout(() => {
                             minimizeTerminal();
                             terminals.delete(id);
@@ -1742,12 +2095,67 @@ const generateGridHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
+            // Buffer for slash commands on client side
+            let commandBuffer = '';
+            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
                     // Skip sending number keys to terminal, they're used for shortcuts
                     return;
                 }
+                
+                // Handle slash command detection on client side
+                if (data === '\r' || data === '\n') {
+                    // Enter pressed - check if it's a slash command
+                    const command = commandBuffer.trim();
+                    
+                    if (command === '/ai' || command === '/claude' || command === '/gemini') {
+                        // Handle slash commands locally
+                        terminal.write('\r\n');
+                        
+                        if (command === '/ai') {
+                            terminal.write('\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n');
+                            terminal.write('\x1b[32mCurrent:\x1b[0m Claude\r\n');
+                            terminal.write('\r\n\x1b[36m━━━ Commands ━━━\x1b[0m\r\n');
+                            terminal.write('  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n');
+                            terminal.write('  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n');
+                            terminal.write('  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n');
+                        } else if (command === '/claude') {
+                            terminal.write('\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
+                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
+                            // Send switch command to server
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: 'switch-ai', id: id, ai: 'claude' }));
+                            }
+                        } else if (command === '/gemini') {
+                            terminal.write('\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
+                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
+                            // Send switch command to server
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: 'switch-ai', id: id, ai: 'gemini' }));
+                            }
+                        }
+                        
+                        commandBuffer = '';
+                        return; // Don't send to server
+                    }
+                    
+                    // Not a slash command, send normally
+                    commandBuffer = '';
+                }
+                
+                // Build command buffer
+                if (data === '\x7f' || data === '\b') {
+                    // Backspace
+                    if (commandBuffer.length > 0) {
+                        commandBuffer = commandBuffer.slice(0, -1);
+                    }
+                } else if (data !== '\r' && data !== '\n') {
+                    commandBuffer += data;
+                }
+                
+                // Send to server
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'input', id: id, data: data }));
                 }
@@ -3048,12 +3456,67 @@ const generateWorkspaceHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
+            // Buffer for slash commands on client side
+            let commandBuffer = '';
+            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
                     // Skip sending number keys to terminal, they're used for shortcuts
                     return;
                 }
+                
+                // Handle slash command detection on client side
+                if (data === '\r' || data === '\n') {
+                    // Enter pressed - check if it's a slash command
+                    const command = commandBuffer.trim();
+                    
+                    if (command === '/ai' || command === '/claude' || command === '/gemini') {
+                        // Handle slash commands locally
+                        terminal.write('\r\n');
+                        
+                        if (command === '/ai') {
+                            terminal.write('\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n');
+                            terminal.write('\x1b[32mCurrent:\x1b[0m Claude\r\n');
+                            terminal.write('\r\n\x1b[36m━━━ Commands ━━━\x1b[0m\r\n');
+                            terminal.write('  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n');
+                            terminal.write('  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n');
+                            terminal.write('  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n');
+                        } else if (command === '/claude') {
+                            terminal.write('\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
+                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
+                            // Send switch command to server
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: 'switch-ai', id: projectId, ai: 'claude' }));
+                            }
+                        } else if (command === '/gemini') {
+                            terminal.write('\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
+                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
+                            // Send switch command to server
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: 'switch-ai', id: projectId, ai: 'gemini' }));
+                            }
+                        }
+                        
+                        commandBuffer = '';
+                        return; // Don't send to server
+                    }
+                    
+                    // Not a slash command, send normally
+                    commandBuffer = '';
+                }
+                
+                // Build command buffer
+                if (data === '\x7f' || data === '\b') {
+                    // Backspace
+                    if (commandBuffer.length > 0) {
+                        commandBuffer = commandBuffer.slice(0, -1);
+                    }
+                } else if (data !== '\r' && data !== '\n') {
+                    commandBuffer += data;
+                }
+                
+                // Send to server
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'input',
@@ -3195,12 +3658,87 @@ const generateWorkspaceHTML = (projects, config) => {
             }
         }
         
-        // Refresh preview iframe
+        // Refresh preview iframe without blinking
         function refreshPreview() {
             const iframe = document.getElementById('previewIframe');
-            if (iframe) {
-                iframe.src = iframe.src;
+            if (!iframe) return;
+            
+            // Get current scroll position before reload
+            let scrollTop = 0;
+            let scrollLeft = 0;
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                if (iframeDoc && iframeDoc.documentElement) {
+                    scrollTop = iframeDoc.documentElement.scrollTop || iframeDoc.body.scrollTop || 0;
+                    scrollLeft = iframeDoc.documentElement.scrollLeft || iframeDoc.body.scrollLeft || 0;
+                }
+            } catch (e) {
+                // Cross-origin restrictions might prevent access
             }
+            
+            // Create a hidden iframe to load the new content
+            const container = iframe.parentElement;
+            const tempIframe = document.createElement('iframe');
+            tempIframe.className = 'preview-iframe';
+            tempIframe.style.cssText = 'position: absolute; visibility: hidden; pointer-events: none;';
+            tempIframe.src = iframe.src + '?t=' + Date.now(); // Force reload with cache buster
+            
+            // When the hidden iframe loads, swap it with the visible one
+            tempIframe.onload = () => {
+                // Set scroll position on the new iframe
+                try {
+                    const newDoc = tempIframe.contentDocument || tempIframe.contentWindow.document;
+                    if (newDoc && newDoc.documentElement) {
+                        // Wait for any images/assets to load
+                        setTimeout(() => {
+                            newDoc.documentElement.scrollTop = scrollTop;
+                            newDoc.documentElement.scrollLeft = scrollLeft;
+                            if (newDoc.body) {
+                                newDoc.body.scrollTop = scrollTop;
+                                newDoc.body.scrollLeft = scrollLeft;
+                            }
+                            
+                            // Now swap the iframes
+                            tempIframe.id = 'previewIframe';
+                            tempIframe.style.visibility = 'visible';
+                            tempIframe.style.position = '';
+                            tempIframe.style.pointerEvents = '';
+                            iframe.remove();
+                            
+                            // Re-setup scroll tracking
+                            if (newDoc && currentProject) {
+                                let scrollTimeout;
+                                const saveScroll = () => {
+                                    clearTimeout(scrollTimeout);
+                                    scrollTimeout = setTimeout(() => {
+                                        const scrollData = {
+                                            scrollTop: newDoc.documentElement.scrollTop || newDoc.body.scrollTop || 0,
+                                            scrollLeft: newDoc.documentElement.scrollLeft || newDoc.body.scrollLeft || 0,
+                                            timestamp: Date.now()
+                                        };
+                                        fetch(\`/api/project/\${encodeURIComponent(currentProject.name)}/scroll-position\`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(scrollData)
+                                        });
+                                    }, 500);
+                                };
+                                newDoc.addEventListener('scroll', saveScroll, true);
+                            }
+                        }, 50); // Small delay to ensure content is rendered
+                    }
+                } catch (e) {
+                    // If we can't set scroll, just swap anyway
+                    tempIframe.id = 'previewIframe';
+                    tempIframe.style.visibility = 'visible';
+                    tempIframe.style.position = '';
+                    tempIframe.style.pointerEvents = '';
+                    iframe.remove();
+                }
+            };
+            
+            // Add the hidden iframe to start loading
+            container.appendChild(tempIframe);
         }
         
         // Search functionality
@@ -3716,7 +4254,8 @@ app.get('/workspace', async (req, res) => {
 });
 
 // Initialize
-ensureClaudeDir().then(() => {
+ensureClaudeDir().then(async () => {
+  await loadTerminalStatesFromDisk(); // Load saved states on startup
   server.listen(PORT, () => {
     console.log(`🚀 Unified Dashboard server running at http://localhost:${PORT}`);
     console.log(`📁 Serving projects from: ${DESKTOP_PATH}`);

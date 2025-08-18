@@ -11,7 +11,12 @@
     "dist-win": "electron-builder --win",
     "dist-linux": "electron-builder --linux"
   },
-  "keywords": ["claude", "dashboard", "terminal", "development"],
+  "keywords": [
+    "claude",
+    "dashboard",
+    "terminal",
+    "development"
+  ],
   "author": "Miguel Lemos",
   "license": "MIT",
   "description": "A bird's eye view of all your projects with integrated Claude terminal",
@@ -21,6 +26,7 @@
     "directories": {
       "output": "dist"
     },
+    "asar": false,
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns"
@@ -34,6 +40,7 @@
     }
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "express": "^5.1.0",
     "js-yaml": "^4.1.0",
     "node-pty": "^1.0.0",
@@ -41,6 +48,7 @@
   },
   "devDependencies": {
     "electron": "^37.2.6",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "nodemon": "^3.1.10"
   }
 }
