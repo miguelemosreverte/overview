@@ -842,14 +842,26 @@ wss.on('connection', (ws) => {
         if (hasContext && hasContext.toProvider === aiType) {
           console.log(`Injecting conversation context from ${hasContext.fromProvider} to ${aiType}`);
           
-          // Wait a bit for the AI to initialize
+          // Wait for the AI to fully initialize before sending context
           setTimeout(() => {
-            const contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType}. Here's a summary of our last conversation:\n\n` +
-              `"${hasContext.lastExchange.slice(-500)}"\n\n` +
-              `Please acknowledge this context. For the full conversation history, you can check the .claude or .gemini session files in the project directory.\n`;
+            // Extract just the text content, removing ANSI escape codes
+            const cleanContext = hasContext.lastExchange
+              .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI color codes
+              .slice(-800); // Get last 800 chars for more context
             
-            // Send the context to the terminal
+            // Format context message based on AI type
+            let contextMessage;
+            if (aiType === 'gemini') {
+              // Gemini format - direct and concise
+              contextMessage = `Context: Switching from ${hasContext.fromProvider}. Previous conversation summary:\n${cleanContext}\n\nAcknowledge this context and continue where we left off. Full history in .${hasContext.fromProvider} session files.`;
+            } else {
+              // Claude format
+              contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType}. Here's our recent conversation:\n\n${cleanContext}\n\nPlease acknowledge this context. Full history available in .${hasContext.fromProvider} session files.`;
+            }
+            
+            // Send the context as input to the terminal
             term.write(contextMessage);
+            term.write('\r'); // Send Enter to submit the message
             
             // Clear the context after using it
             const state = terminalStates.get(projectId);
@@ -858,7 +870,7 @@ wss.on('connection', (ws) => {
               terminalStates.set(projectId, state);
               saveTerminalStatesToDisk();
             }
-          }, 2000); // Wait 2 seconds for AI to initialize
+          }, 3500); // Wait 3.5 seconds for AI to fully initialize
         }
         
         // Send output to WebSocket - capture projectId in closure
@@ -3019,15 +3031,13 @@ const generateWorkspaceHTML = (projects, config) => {
                             id: projectId 
                         }));
                     }
-                    document.getElementById('aiStatus').textContent = \`Restart terminal for \${provider}\`;
+                    document.getElementById('aiStatus').textContent = \`Starting \${provider}...\`;
                     
-                    // Clear the terminal display and show a friendly message
+                    // Clear the terminal display and show a brief switching message
                     if (currentTerminal) {
                         currentTerminal.clear();
                         currentTerminal.write(\`\\r\\n\\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\x1b[0m\\r\\n\`);
-                        currentTerminal.write(\`\\r\\n  \\x1b[33m⚡ Switching to \${provider}\\x1b[0m\\r\\n\\r\\n\`);
-                        currentTerminal.write(\`  Terminal closed to switch AI provider.\\r\\n\`);
-                        currentTerminal.write(\`  Click here to restart with \${provider}.\\r\\n\\r\\n\`);
+                        currentTerminal.write(\`\\r\\n  \\x1b[33m⚡ Switching to \${provider}...\\x1b[0m\\r\\n\\r\\n\`);
                         currentTerminal.write(\`  \\x1b[90mℹ️  Recent conversation context will be passed to \${provider}\\x1b[0m\\r\\n\`);
                         currentTerminal.write(\`  \\x1b[90m   Full history available in .\${provider === 'claude' ? 'claude' : 'gemini'} session files\\x1b[0m\\r\\n\\r\\n\`);
                         currentTerminal.write(\`\\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\x1b[0m\\r\\n\`);
@@ -3037,21 +3047,14 @@ const generateWorkspaceHTML = (projects, config) => {
                     terminalPool.delete(projectId);
                     wsPool.delete(projectId);
                     
-                    // Add a one-time click handler to restart the terminal
-                    const terminalContainer = document.getElementById('terminalContainer');
-                    const restartHandler = () => {
-                        terminalContainer.removeEventListener('click', restartHandler);
+                    // Auto-restart the terminal with the new provider after a brief delay
+                    setTimeout(() => {
                         if (currentProject) {
+                            isSwitchingProvider = false; // Reset flag
                             startTerminal(currentProject.name, currentProject.path);
                             document.getElementById('aiStatus').textContent = \`Using \${provider}\`;
                         }
-                    };
-                    terminalContainer.addEventListener('click', restartHandler);
-                    
-                    // Reset flag after a delay
-                    setTimeout(() => {
-                        isSwitchingProvider = false;
-                    }, 1000);
+                    }, 500);
                 }, 500);
             } else {
                 document.getElementById('aiStatus').textContent = 'No active terminal';
