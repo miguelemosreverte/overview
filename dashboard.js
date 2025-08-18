@@ -74,6 +74,14 @@ async function ensureClaudeDir() {
 // Path for persistent terminal states
 const TERMINAL_STATES_FILE = path.join(CLAUDE_STATUS_DIR, 'terminal-states.json');
 
+// Path for conversation history
+const CONVERSATIONS_DIR = path.join(CLAUDE_STATUS_DIR, 'conversations');
+
+// Ensure conversations directory exists
+if (!require('fs').existsSync(CONVERSATIONS_DIR)) {
+  require('fs').mkdirSync(CONVERSATIONS_DIR, { recursive: true });
+}
+
 // Save terminal states to disk
 async function saveTerminalStatesToDisk() {
   try {
@@ -109,6 +117,58 @@ async function loadTerminalStatesFromDisk() {
     if (error.code !== 'ENOENT') {
       console.error('Error loading terminal states:', error);
     }
+  }
+}
+
+// Save conversation exchange to disk
+async function saveConversationExchange(projectId, role, content) {
+  try {
+    const conversationFile = path.join(CONVERSATIONS_DIR, `${projectId}.json`);
+    let conversations = [];
+    
+    // Load existing conversations if file exists
+    if (require('fs').existsSync(conversationFile)) {
+      const data = await fs.readFile(conversationFile, 'utf-8');
+      conversations = JSON.parse(data);
+    }
+    
+    // Add new exchange
+    conversations.push({
+      role: role, // 'user' or 'assistant' 
+      content: content,
+      timestamp: new Date().toISOString(),
+      provider: terminalStates.get(projectId)?.aiType || 'unknown'
+    });
+    
+    // Keep only last 100 exchanges to prevent file from getting too large
+    if (conversations.length > 100) {
+      conversations = conversations.slice(-100);
+    }
+    
+    // Save to disk
+    await fs.writeFile(conversationFile, JSON.stringify(conversations, null, 2));
+  } catch (error) {
+    console.error('Error saving conversation:', error);
+  }
+}
+
+// Get last N conversation exchanges
+async function getRecentConversations(projectId, count = 3) {
+  try {
+    const conversationFile = path.join(CONVERSATIONS_DIR, `${projectId}.json`);
+    
+    if (!require('fs').existsSync(conversationFile)) {
+      return [];
+    }
+    
+    const data = await fs.readFile(conversationFile, 'utf-8');
+    const conversations = JSON.parse(data);
+    
+    // Return last N exchanges
+    return conversations.slice(-count);
+  } catch (error) {
+    console.error('Error loading conversations:', error);
+    return [];
   }
 }
 
@@ -843,15 +903,27 @@ wss.on('connection', (ws) => {
           console.log(`Injecting context handoff from ${hasContext.fromProvider} to ${aiType}`);
           
           // Wait for the AI to fully initialize before sending context
-          setTimeout(() => {
-            // Create a clear handoff message with instructions
-            const contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType} to continue working on the ${hasContext.projectName} project. ` +
-              `The previous AI session files are in ${hasContext.projectPath}/.${hasContext.fromProvider}/ directory. ` +
-              `Key context: We're developing the Overview dashboard app with AI provider switching feature. ` +
-              `Please check the CLAUDE.md file for project context and recent git commits for latest changes.`;
+          setTimeout(async () => {
+            // Get recent conversation history
+            const recentConversations = await getRecentConversations(projectId, 3);
+            
+            let contextMessage;
+            if (recentConversations.length > 0) {
+              // Build context from actual conversation history
+              const conversationSummary = recentConversations
+                .map(msg => `${msg.role}: ${msg.content.slice(0, 100)}`)
+                .join('\n');
+              
+              contextMessage = `Switching from ${hasContext.fromProvider}. Recent conversation:\n${conversationSummary}\n` +
+                `Check CLAUDE.md for project context and ${hasContext.projectPath}/.${hasContext.fromProvider}/ for full history.`;
+            } else {
+              // Fallback if no conversation history
+              contextMessage = `Switching from ${hasContext.fromProvider} to continue on ${hasContext.projectName}. ` +
+                `Check CLAUDE.md for project context and recent git commits.`;
+            }
             
             // Send the context as input to the PTY
-            console.log(`Sending handoff message to ${aiType}`);
+            console.log(`Sending handoff with ${recentConversations.length} recent messages`);
             
             // Type the message quickly but visibly
             let charIndex = 0;
@@ -1015,7 +1087,27 @@ wss.on('connection', (ws) => {
       const state = terminalStates.get(projectId);
       
       if (term && state) {
-        // Simply pass input directly to terminal without any interception
+        // Track user input for conversation history
+        if (!state.currentInput) {
+          state.currentInput = '';
+        }
+        
+        // Accumulate input until Enter is pressed
+        if (msg.data.includes('\r') || msg.data.includes('\n')) {
+          // User pressed Enter - save the complete input
+          const userMessage = state.currentInput.trim();
+          if (userMessage.length > 0 && !userMessage.startsWith('/')) {
+            // Save user message to conversation history
+            saveConversationExchange(projectId, 'user', userMessage);
+          }
+          state.currentInput = '';
+        } else {
+          // Accumulate characters (excluding control sequences)
+          const cleanChar = msg.data.replace(/[\x00-\x1F\x7F]/g, '');
+          state.currentInput += cleanChar;
+        }
+        
+        // Pass input to terminal
         term.write(msg.data);
       } else if (term) {
         // No state, just pass through
