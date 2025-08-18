@@ -85,7 +85,8 @@ async function saveTerminalStatesToDisk() {
         projectName: state.projectName,
         hasSession: true,
         preferredAI: state.preferredAI || null,
-        aiType: state.aiType || null
+        aiType: state.aiType || null,
+        conversationContext: state.conversationContext || null
       };
     }
     await fs.writeFile(TERMINAL_STATES_FILE, JSON.stringify(states, null, 2));
@@ -821,6 +822,10 @@ wss.on('connection', (ws) => {
         });
         
         terminals.set(projectId, term);
+        
+        // Check if we have conversation context from a previous AI provider
+        const hasContext = existingState?.conversationContext;
+        
         terminalStates.set(projectId, {
           projectPath,
           projectName,
@@ -828,9 +833,33 @@ wss.on('connection', (ws) => {
           startTime: new Date(),
           buffer: [],
           hasSession: true,
-          aiType: aiType  // Track which AI is being used
+          aiType: aiType,  // Track which AI is being used
+          conversationContext: hasContext || null  // Preserve context if exists
         });
         saveTerminalStatesToDisk(); // Save state when new session created
+        
+        // If we have context from switching providers, inject it as the first message
+        if (hasContext && hasContext.toProvider === aiType) {
+          console.log(`Injecting conversation context from ${hasContext.fromProvider} to ${aiType}`);
+          
+          // Wait a bit for the AI to initialize
+          setTimeout(() => {
+            const contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType}. Here's a summary of our last conversation:\n\n` +
+              `"${hasContext.lastExchange.slice(-500)}"\n\n` +
+              `Please acknowledge this context. For the full conversation history, you can check the .claude or .gemini session files in the project directory.\n`;
+            
+            // Send the context to the terminal
+            term.write(contextMessage);
+            
+            // Clear the context after using it
+            const state = terminalStates.get(projectId);
+            if (state) {
+              state.conversationContext = null;
+              terminalStates.set(projectId, state);
+              saveTerminalStatesToDisk();
+            }
+          }, 2000); // Wait 2 seconds for AI to initialize
+        }
         
         // Send output to WebSocket - capture projectId in closure
         const capturedProjectId = projectId;
@@ -998,6 +1027,23 @@ wss.on('connection', (ws) => {
           hasSession: false
         };
         terminalStates.set(msg.id, state);
+      }
+      
+      // Save the last conversation context if we have a terminal buffer
+      if (state.buffer && state.buffer.length > 0) {
+        // Get the last 50 lines as context (or less if buffer is smaller)
+        const contextLines = Math.min(50, state.buffer.length);
+        const lastContext = state.buffer.slice(-contextLines).join('');
+        
+        // Save context for the new provider to use
+        state.conversationContext = {
+          fromProvider: state.aiType || 'unknown',
+          toProvider: msg.provider,
+          lastExchange: lastContext,
+          switchTime: new Date().toISOString()
+        };
+        
+        console.log(`Saving conversation context from ${state.aiType} for ${msg.provider}`);
       }
       
       state.preferredAI = msg.provider;
@@ -2982,6 +3028,8 @@ const generateWorkspaceHTML = (projects, config) => {
                         currentTerminal.write(\`\\r\\n  \\x1b[33m⚡ Switching to \${provider}\\x1b[0m\\r\\n\\r\\n\`);
                         currentTerminal.write(\`  Terminal closed to switch AI provider.\\r\\n\`);
                         currentTerminal.write(\`  Click here to restart with \${provider}.\\r\\n\\r\\n\`);
+                        currentTerminal.write(\`  \\x1b[90mℹ️  Recent conversation context will be passed to \${provider}\\x1b[0m\\r\\n\`);
+                        currentTerminal.write(\`  \\x1b[90m   Full history available in .\${provider === 'claude' ? 'claude' : 'gemini'} session files\\x1b[0m\\r\\n\\r\\n\`);
                         currentTerminal.write(\`\\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\x1b[0m\\r\\n\`);
                     }
                     
