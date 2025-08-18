@@ -52,10 +52,7 @@ async function getConversations() {
       const providerLabel = msg.provider ? ` (${msg.provider})` : '';
       
       console.log(`${role}${providerLabel} - ${timestamp}`);
-      console.log(msg.content.slice(0, 200)); // Show first 200 chars
-      if (msg.content.length > 200) {
-        console.log('...[truncated]');
-      }
+      console.log(msg.content);
       console.log('---');
     });
     

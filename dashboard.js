@@ -126,6 +126,26 @@ async function loadTerminalStatesFromDisk() {
 // Save conversation exchange to disk
 async function saveConversationExchange(projectId, role, content) {
   try {
+    // Aggressively clean the content before saving
+    const cleanContent = content
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove ALL ANSI escape sequences
+      .replace(/\[\?[0-9;]+[a-z]/gi, '') // Remove device control sequences like [?1;2c
+      .replace(/\[[0-9]*[A-Z]/g, '') // Remove cursor movement like [2K, [1A
+      .replace(/\[[\dA-Z]+/g, '') // Remove any remaining bracket sequences
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
+      .replace(/[╭─╮│╰╯┌┐└┘├┤┬┴┼]/g, '') // Remove box drawing characters
+      .trim();
+    
+    // Skip if the content is mostly garbage
+    if (cleanContent.length < 5 || 
+        cleanContent.includes('[2K') || 
+        cleanContent.includes('[1A') ||
+        cleanContent.includes('[O') ||
+        cleanContent.includes('[I')) {
+      console.log(`Skipping garbage message: "${content.slice(0, 30)}..."`);
+      return;
+    }
+    
     ensureConversationsDir(); // Make sure directory exists
     
     const conversationFile = path.join(CONVERSATIONS_DIR, `${projectId}.json`);
@@ -137,10 +157,10 @@ async function saveConversationExchange(projectId, role, content) {
       conversations = JSON.parse(data);
     }
     
-    // Add new exchange
+    // Add new exchange with cleaned content
     conversations.push({
       role: role, // 'user' or 'assistant' 
-      content: content,
+      content: cleanContent,
       timestamp: new Date().toISOString(),
       provider: terminalStates.get(projectId)?.aiType || 'unknown'
     });
@@ -152,7 +172,7 @@ async function saveConversationExchange(projectId, role, content) {
     
     // Save to disk
     await fs.writeFile(conversationFile, JSON.stringify(conversations, null, 2));
-    console.log(`Saved ${role} message for ${projectId}: ${content.slice(0, 50)}...`);
+    console.log(`Saved clean ${role} message for ${projectId}: ${cleanContent.slice(0, 50)}...`);
   } catch (error) {
     console.error('Error saving conversation:', error);
   }
@@ -993,39 +1013,8 @@ wss.on('connection', (ws) => {
             }
             state.buffer.push(data);
             
-            // Track AI responses (simplified - captures output after user input)
-            if (!state.capturingResponse && state.lastUserInput) {
-              state.capturingResponse = true;
-              state.currentResponse = '';
-              
-              // Stop capturing after 3 seconds (assuming AI has responded)
-              setTimeout(() => {
-                if (state.capturingResponse && state.currentResponse.length > 10) {
-                  // Clean and save AI response more thoroughly
-                  const cleanResponse = state.currentResponse
-                    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove ANSI escape sequences
-                    .replace(/\[[\dA-Z]+/g, '') // Remove bracket sequences
-                    .replace(/[╭─╮│╰╯]/g, '') // Remove box drawing characters
-                    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ') // Remove control chars
-                    .replace(/\s+/g, ' ') // Normalize whitespace
-                    .trim()
-                    .slice(0, 500); // Limit length
-                  
-                  if (cleanResponse.length > 20 && !cleanResponse.includes('[2K') && !cleanResponse.includes('[1A')) {
-                    console.log(`Saving AI response: "${cleanResponse.slice(0, 50)}..."`);
-                    saveConversationExchange(capturedProjectId, 'assistant', cleanResponse);
-                  }
-                }
-                state.capturingResponse = false;
-                state.currentResponse = '';
-                state.lastUserInput = null;
-              }, 3000);
-            }
-            
-            // Accumulate response data
-            if (state.capturingResponse) {
-              state.currentResponse += data;
-            }
+            // Temporarily disable AI response capture due to terminal encoding issues
+            // Will implement a better solution that doesn't rely on terminal parsing
             
             // Calculate total buffer size
             const totalLength = state.buffer.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -1146,9 +1135,10 @@ wss.on('connection', (ws) => {
           
           console.log(`User pressed Enter. Cleaned input: "${userMessage}"`);
           if (userMessage.length > 0 && !userMessage.startsWith('/')) {
-            // Save user message to conversation history
-            console.log(`Saving user message for ${projectId}: "${userMessage}"`);
-            saveConversationExchange(projectId, 'user', userMessage);
+            // Temporarily disable auto-capture due to encoding issues
+            // Will re-enable once we have better terminal parsing
+            // console.log(`Saving user message for ${projectId}: "${userMessage}"`);
+            // saveConversationExchange(projectId, 'user', userMessage);
             // Mark that we should capture the AI response
             state.lastUserInput = userMessage;
           }
