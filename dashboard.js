@@ -985,6 +985,17 @@ wss.on('connection', (ws) => {
         term.kill();
         terminals.delete(msg.id);
       }
+    } else if (msg.type === 'get-ai-provider') {
+      // Return the current AI provider for a project
+      const state = terminalStates.get(msg.id);
+      if (state) {
+        ws.send(JSON.stringify({
+          type: 'ai-provider-info',
+          id: msg.id,
+          provider: state.preferredAI || 'auto',
+          aiType: state.aiType || null
+        }));
+      }
     }
   });
   
@@ -2884,24 +2895,26 @@ const generateWorkspaceHTML = (projects, config) => {
         
         // Switch AI provider (Claude or Gemini)
         async function switchAIProvider(provider) {
-            const currentProjectId = window.currentProject?.id;
-            if (!currentProjectId) {
+            if (!currentProject) {
                 document.getElementById('aiStatus').textContent = 'Select a project first';
                 return;
             }
+            
+            // Generate the project ID (same as how terminals are created)
+            const projectId = currentProject.name.replace(/[^a-zA-Z0-9]/g, '_');
             
             // Update button states
             document.querySelectorAll('.ai-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(\`.\${provider}-btn\`).classList.add('active');
             
             // Update status
-            document.getElementById('aiStatus').textContent = \`Switching to \${provider}...\`;
+            document.getElementById('aiStatus').textContent = \`Switching \${currentProject.name} to \${provider}\`;
             
             // Send message to server to switch AI provider
             if (currentWs && currentWs.readyState === WebSocket.OPEN) {
                 currentWs.send(JSON.stringify({ 
                     type: 'switch-ai-provider', 
-                    id: currentProjectId, 
+                    id: projectId, 
                     provider: provider 
                 }));
                 
@@ -2910,12 +2923,37 @@ const generateWorkspaceHTML = (projects, config) => {
                     if (currentWs) {
                         currentWs.send(JSON.stringify({ 
                             type: 'kill-terminal', 
-                            id: currentProjectId 
+                            id: projectId 
                         }));
                     }
-                    document.getElementById('aiStatus').textContent = \`Restart terminal to use \${provider}\`;
+                    document.getElementById('aiStatus').textContent = \`Click terminal to restart with \${provider}\`;
+                    
+                    // Clear the terminal display
+                    if (currentTerminal) {
+                        currentTerminal.clear();
+                        currentTerminal.write(\`\\r\\n\\x1b[33m⚡ Terminal closed. Click the terminal button to restart with \${provider}.\\x1b[0m\\r\\n\`);
+                    }
                 }, 500);
+            } else {
+                document.getElementById('aiStatus').textContent = 'No active terminal';
             }
+        }
+        
+        // Update AI provider display based on current project's setting
+        async function updateAIProviderDisplay(projectName) {
+            const projectId = projectName.replace(/[^a-zA-Z0-9]/g, '_');
+            
+            // Request current AI provider from server
+            if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                currentWs.send(JSON.stringify({
+                    type: 'get-ai-provider',
+                    id: projectId
+                }));
+            }
+            
+            // Default state - no provider active
+            document.querySelectorAll('.ai-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('aiStatus').textContent = '';
         }
         
         // Set specific layout with percentages
@@ -3216,6 +3254,9 @@ const generateWorkspaceHTML = (projects, config) => {
             // Update terminal
             startTerminal(projectName, projectPath);
             
+            // Check and display current AI provider for this project
+            updateAIProviderDisplay(projectName);
+            
             // Save session
             saveWorkspaceSession();
             
@@ -3361,7 +3402,26 @@ const generateWorkspaceHTML = (projects, config) => {
             
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
-                if (msg.type === 'output') {
+                if (msg.type === 'ai-provider-info') {
+                    // Update AI provider buttons based on current setting
+                    document.querySelectorAll('.ai-btn').forEach(btn => btn.classList.remove('active'));
+                    if (msg.provider && msg.provider !== 'auto') {
+                        const btn = document.querySelector(\`.\${msg.provider}-btn\`);
+                        if (btn) {
+                            btn.classList.add('active');
+                        }
+                        document.getElementById('aiStatus').textContent = \`Using \${msg.provider}\`;
+                    } else if (msg.aiType) {
+                        // Show what's actually being used
+                        const btn = document.querySelector(\`.\${msg.aiType}-btn\`);
+                        if (btn) {
+                            btn.classList.add('active');
+                        }
+                        document.getElementById('aiStatus').textContent = \`Auto: \${msg.aiType}\`;
+                    } else {
+                        document.getElementById('aiStatus').textContent = 'Auto';
+                    }
+                } else if (msg.type === 'output') {
                     // Filter out the bypass permissions text and other Claude banner text
                     let filteredData = msg.data;
                     
