@@ -77,9 +77,12 @@ const TERMINAL_STATES_FILE = path.join(CLAUDE_STATUS_DIR, 'terminal-states.json'
 // Path for conversation history
 const CONVERSATIONS_DIR = path.join(CLAUDE_STATUS_DIR, 'conversations');
 
-// Ensure conversations directory exists
-if (!require('fs').existsSync(CONVERSATIONS_DIR)) {
-  require('fs').mkdirSync(CONVERSATIONS_DIR, { recursive: true });
+// Ensure conversations directory exists (create it lazily when needed)
+function ensureConversationsDir() {
+  if (!require('fs').existsSync(CONVERSATIONS_DIR)) {
+    require('fs').mkdirSync(CONVERSATIONS_DIR, { recursive: true });
+    console.log('Created conversations directory:', CONVERSATIONS_DIR);
+  }
 }
 
 // Save terminal states to disk
@@ -123,6 +126,8 @@ async function loadTerminalStatesFromDisk() {
 // Save conversation exchange to disk
 async function saveConversationExchange(projectId, role, content) {
   try {
+    ensureConversationsDir(); // Make sure directory exists
+    
     const conversationFile = path.join(CONVERSATIONS_DIR, `${projectId}.json`);
     let conversations = [];
     
@@ -147,6 +152,7 @@ async function saveConversationExchange(projectId, role, content) {
     
     // Save to disk
     await fs.writeFile(conversationFile, JSON.stringify(conversations, null, 2));
+    console.log(`Saved ${role} message for ${projectId}: ${content.slice(0, 50)}...`);
   } catch (error) {
     console.error('Error saving conversation:', error);
   }
@@ -1129,8 +1135,10 @@ wss.on('connection', (ws) => {
         if (msg.data.includes('\r') || msg.data.includes('\n')) {
           // User pressed Enter - save the complete input
           const userMessage = state.currentInput.trim();
+          console.log(`User pressed Enter. Input: "${userMessage}"`);
           if (userMessage.length > 0 && !userMessage.startsWith('/')) {
             // Save user message to conversation history
+            console.log(`Saving user message for ${projectId}: "${userMessage}"`);
             saveConversationExchange(projectId, 'user', userMessage);
             // Mark that we should capture the AI response
             state.lastUserInput = userMessage;
