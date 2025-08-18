@@ -945,125 +945,8 @@ wss.on('connection', (ws) => {
       const state = terminalStates.get(projectId);
       
       if (term && state) {
-        // Initialize command buffer if not exists
-        if (!state.commandBuffer) {
-          state.commandBuffer = '';
-        }
-        
-        console.log('Input received:', JSON.stringify(msg.data), 'Buffer:', state.commandBuffer);
-        
-        // Check if this is Enter key (carriage return)
-        if (msg.data === '\r' || msg.data === '\n') {
-          // Process the buffered command
-          const command = state.commandBuffer.trim();
-          console.log('Processing command:', command);
-          
-          // Check for slash commands
-          if (command === '/claude' || command === '/gemini' || command === '/ai') {
-            // Handle AI switching commands
-            if (command === '/claude') {
-              // Send feedback to user
-              term.write('\r\n\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
-              term.write('\x1b[90mPlease restart the terminal to use Claude\x1b[0m\r\n');
-              
-              // Set preference for Claude
-              state.preferredAI = 'claude';
-              terminalStates.set(projectId, state);
-              saveTerminalStatesToDisk();
-              
-              // Kill current terminal to force restart
-              setTimeout(() => {
-                term.kill();
-                terminals.delete(projectId);
-              }, 1000);
-              
-            } else if (command === '/gemini') {
-              // Send feedback to user
-              term.write('\r\n\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
-              term.write('\x1b[90mPlease restart the terminal to use Gemini\x1b[0m\r\n');
-              
-              // Set preference for Gemini
-              state.preferredAI = 'gemini';
-              terminalStates.set(projectId, state);
-              saveTerminalStatesToDisk();
-              
-              // Kill current terminal to force restart
-              setTimeout(() => {
-                term.kill();
-                terminals.delete(projectId);
-              }, 1000);
-              
-            } else if (command === '/ai') {
-              // Show current AI status
-              const currentAI = state.aiType || 'unknown';
-              const preferredAI = state.preferredAI || 'auto';
-              const statusMsg = `\r\n\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n` +
-                              `\x1b[32mCurrent:\x1b[0m ${currentAI}\r\n` +
-                              `\x1b[32mPreferred:\x1b[0m ${preferredAI}\r\n\r\n` +
-                              `\x1b[36m━━━ Commands ━━━\x1b[0m\r\n` +
-                              `  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n` +
-                              `  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n` +
-                              `  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n`;
-              
-              term.write(statusMsg);
-              
-              // Clear the buffer and don't send to AI
-              state.commandBuffer = '';
-              return;
-            }
-            
-            // Clear buffer after slash command
-            state.commandBuffer = '';
-            return;
-          }
-          
-          // Not a slash command - send the whole buffered input if it was a slash attempt
-          if (state.commandBuffer.startsWith('/')) {
-            // It was a slash but not a valid command, send it all to AI
-            term.write(state.commandBuffer + msg.data);
-          } else {
-            // Normal input, just send Enter
-            term.write(msg.data);
-          }
-          state.commandBuffer = '';
-          
-        } else if (msg.data === '\x7f' || msg.data === '\b') {
-          // Backspace - remove last character from buffer
-          if (state.commandBuffer.length > 0) {
-            state.commandBuffer = state.commandBuffer.slice(0, -1);
-          }
-          
-          // Handle backspace display
-          if (state.commandBuffer.startsWith('/') || state.commandBuffer === '') {
-            // Echo backspace to client only
-            ws.send(JSON.stringify({
-              type: 'output',
-              id: projectId,
-              data: '\b \b'  // Backspace, space, backspace (clears character)
-            }));
-          } else {
-            // Normal backspace, send to AI
-            term.write(msg.data);
-          }
-          
-        } else {
-          // Add character to buffer
-          state.commandBuffer += msg.data;
-          
-          // Only pass to terminal if not building a slash command
-          if (state.commandBuffer.startsWith('/')) {
-            // Building a potential slash command - don't send to AI yet
-            // Just echo to client's screen
-            ws.send(JSON.stringify({
-              type: 'output',
-              id: projectId,
-              data: msg.data
-            }));
-          } else {
-            // Normal text, pass through to AI
-            term.write(msg.data);
-          }
-        }
+        // Simply pass input directly to terminal without any interception
+        term.write(msg.data);
       } else if (term) {
         // No state, just pass through
         term.write(msg.data);
@@ -2095,9 +1978,6 @@ const generateGridHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
-            // Buffer for slash commands on client side
-            let commandBuffer = '';
-            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
@@ -2105,57 +1985,7 @@ const generateGridHTML = (projects, config) => {
                     return;
                 }
                 
-                // Handle slash command detection on client side
-                if (data === '\r' || data === '\n') {
-                    // Enter pressed - check if it's a slash command
-                    const command = commandBuffer.trim();
-                    
-                    if (command === '/ai' || command === '/claude' || command === '/gemini') {
-                        // Handle slash commands locally
-                        terminal.write('\r\n');
-                        
-                        if (command === '/ai') {
-                            terminal.write('\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n');
-                            terminal.write('\x1b[32mCurrent:\x1b[0m Claude\r\n');
-                            terminal.write('\r\n\x1b[36m━━━ Commands ━━━\x1b[0m\r\n');
-                            terminal.write('  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n');
-                            terminal.write('  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n');
-                            terminal.write('  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n');
-                        } else if (command === '/claude') {
-                            terminal.write('\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
-                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
-                            // Send switch command to server
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: 'switch-ai', id: id, ai: 'claude' }));
-                            }
-                        } else if (command === '/gemini') {
-                            terminal.write('\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
-                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
-                            // Send switch command to server
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: 'switch-ai', id: id, ai: 'gemini' }));
-                            }
-                        }
-                        
-                        commandBuffer = '';
-                        return; // Don't send to server
-                    }
-                    
-                    // Not a slash command, send normally
-                    commandBuffer = '';
-                }
-                
-                // Build command buffer
-                if (data === '\x7f' || data === '\b') {
-                    // Backspace
-                    if (commandBuffer.length > 0) {
-                        commandBuffer = commandBuffer.slice(0, -1);
-                    }
-                } else if (data !== '\r' && data !== '\n') {
-                    commandBuffer += data;
-                }
-                
-                // Send to server
+                // Send all input directly to server without interception
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'input', id: id, data: data }));
                 }
@@ -3456,9 +3286,6 @@ const generateWorkspaceHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
-            // Buffer for slash commands on client side
-            let commandBuffer = '';
-            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
@@ -3466,57 +3293,7 @@ const generateWorkspaceHTML = (projects, config) => {
                     return;
                 }
                 
-                // Handle slash command detection on client side
-                if (data === '\r' || data === '\n') {
-                    // Enter pressed - check if it's a slash command
-                    const command = commandBuffer.trim();
-                    
-                    if (command === '/ai' || command === '/claude' || command === '/gemini') {
-                        // Handle slash commands locally
-                        terminal.write('\r\n');
-                        
-                        if (command === '/ai') {
-                            terminal.write('\x1b[36m━━━ AI Status ━━━\x1b[0m\r\n');
-                            terminal.write('\x1b[32mCurrent:\x1b[0m Claude\r\n');
-                            terminal.write('\r\n\x1b[36m━━━ Commands ━━━\x1b[0m\r\n');
-                            terminal.write('  \x1b[33m/claude\x1b[0m  - Switch to Claude\r\n');
-                            terminal.write('  \x1b[33m/gemini\x1b[0m  - Switch to Gemini\r\n');
-                            terminal.write('  \x1b[33m/ai\x1b[0m      - Show this status\r\n\r\n');
-                        } else if (command === '/claude') {
-                            terminal.write('\x1b[33m⚡ Switching to Claude...\x1b[0m\r\n');
-                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
-                            // Send switch command to server
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: 'switch-ai', id: projectId, ai: 'claude' }));
-                            }
-                        } else if (command === '/gemini') {
-                            terminal.write('\x1b[33m⚡ Switching to Gemini...\x1b[0m\r\n');
-                            terminal.write('\x1b[90mPlease restart the terminal\x1b[0m\r\n');
-                            // Send switch command to server
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: 'switch-ai', id: projectId, ai: 'gemini' }));
-                            }
-                        }
-                        
-                        commandBuffer = '';
-                        return; // Don't send to server
-                    }
-                    
-                    // Not a slash command, send normally
-                    commandBuffer = '';
-                }
-                
-                // Build command buffer
-                if (data === '\x7f' || data === '\b') {
-                    // Backspace
-                    if (commandBuffer.length > 0) {
-                        commandBuffer = commandBuffer.slice(0, -1);
-                    }
-                } else if (data !== '\r' && data !== '\n') {
-                    commandBuffer += data;
-                }
-                
-                // Send to server
+                // Send all input directly to server without interception
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'input',
