@@ -963,20 +963,27 @@ wss.on('connection', (ws) => {
         saveConversationState(state.projectPath, state.projectName);
         saveTerminalStatesToDisk(); // Save state when minimized
       }
-    } else if (msg.type === 'switch-ai') {
-      // Handle AI switching from client
+    } else if (msg.type === 'switch-ai-provider') {
+      // Handle AI provider switching from client
       const state = terminalStates.get(msg.id);
       if (state) {
-        state.preferredAI = msg.ai;
+        state.preferredAI = msg.provider;
         terminalStates.set(msg.id, state);
         saveTerminalStatesToDisk();
         
-        // Kill current terminal to force restart with new AI
-        const term = terminals.get(msg.id);
-        if (term) {
-          term.kill();
-          terminals.delete(msg.id);
-        }
+        // Send confirmation back to client
+        ws.send(JSON.stringify({
+          type: 'ai-provider-switched',
+          id: msg.id,
+          provider: msg.provider
+        }));
+      }
+    } else if (msg.type === 'kill-terminal') {
+      // Kill terminal to allow restart with new AI provider
+      const term = terminals.get(msg.id);
+      if (term) {
+        term.kill();
+        terminals.delete(msg.id);
       }
     }
   });
@@ -2232,6 +2239,43 @@ const generateWorkspaceHTML = (projects, config) => {
             border-color: rgba(255, 255, 255, 0.3);
         }
         
+        .ai-btn {
+            background: rgba(45, 45, 45, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 6px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+        }
+        
+        .ai-btn:hover {
+            background: rgba(95, 150, 254, 0.1);
+            border-color: rgba(95, 150, 254, 0.3);
+        }
+        
+        .ai-btn.active {
+            background: rgba(95, 150, 254, 0.2);
+            border-color: rgba(95, 150, 254, 0.5);
+            box-shadow: 0 0 10px rgba(95, 150, 254, 0.3);
+        }
+        
+        .claude-btn.active {
+            background: rgba(255, 132, 0, 0.2);
+            border-color: rgba(255, 132, 0, 0.5);
+            box-shadow: 0 0 10px rgba(255, 132, 0, 0.3);
+        }
+        
+        .gemini-btn.active {
+            background: rgba(66, 133, 244, 0.2);
+            border-color: rgba(66, 133, 244, 0.5);
+            box-shadow: 0 0 10px rgba(66, 133, 244, 0.3);
+        }
+        
         .layout-icon {
             width: 22px;
             height: 22px;
@@ -2657,6 +2701,29 @@ const generateWorkspaceHTML = (projects, config) => {
                     </div>
                 </button>
             </div>
+            
+            <!-- AI Provider Buttons (positioned at the right) -->
+            <div class="ai-controls" style="margin-left: auto; display: flex; gap: 8px; margin-right: 16px;">
+                <button class="ai-btn claude-btn" onclick="switchAIProvider('claude')" title="Switch to Claude (Anthropic)">
+                    <!-- Anthropic Claude icon -->
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#FF8400">
+                        <path d="M17.5 3C15.6 3 14 4.6 14 6.5c0 .4.1.8.2 1.2L10 12l-4.2-4.3c.1-.4.2-.8.2-1.2C6 4.6 4.4 3 2.5 3S-1 4.6-1 6.5 .6 10 2.5 10c.4 0 .8-.1 1.2-.2L8 14l-4.3 4.2c-.4-.1-.8-.2-1.2-.2C.6 18-1 19.6-1 21.5S.6 25 2.5 25s3.5-1.6 3.5-3.5c0-.4-.1-.8-.2-1.2L10 16l4.2 4.3c-.1.4-.2.8-.2 1.2 0 1.9 1.6 3.5 3.5 3.5s3.5-1.6 3.5-3.5-1.6-3.5-3.5-3.5c-.4 0-.8.1-1.2.2L12 14l4.3-4.2c.4.1.8.2 1.2.2 1.9 0 3.5-1.6 3.5-3.5S19.4 3 17.5 3z"/>
+                    </svg>
+                </button>
+                <button class="ai-btn gemini-btn" onclick="switchAIProvider('gemini')" title="Switch to Gemini (Google)">
+                    <!-- Google Gemini icon -->
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <defs>
+                            <linearGradient id="gemini-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#4285F4"/>
+                                <stop offset="100%" style="stop-color:#9B72CB"/>
+                            </linearGradient>
+                        </defs>
+                        <path fill="url(#gemini-gradient)" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                    </svg>
+                </button>
+                <span class="ai-status" id="aiStatus" style="color: #888; font-size: 11px; align-self: center;"></span>
+            </div>
         </div>
         
         <!-- Main Content -->
@@ -2813,6 +2880,42 @@ const generateWorkspaceHTML = (projects, config) => {
             
             // Save preference
             localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
+        }
+        
+        // Switch AI provider (Claude or Gemini)
+        async function switchAIProvider(provider) {
+            const currentProjectId = window.currentProject?.id;
+            if (!currentProjectId) {
+                document.getElementById('aiStatus').textContent = 'Select a project first';
+                return;
+            }
+            
+            // Update button states
+            document.querySelectorAll('.ai-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(\`.\${provider}-btn\`).classList.add('active');
+            
+            // Update status
+            document.getElementById('aiStatus').textContent = \`Switching to \${provider}...\`;
+            
+            // Send message to server to switch AI provider
+            if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                currentWs.send(JSON.stringify({ 
+                    type: 'switch-ai-provider', 
+                    id: currentProjectId, 
+                    provider: provider 
+                }));
+                
+                // Kill current terminal to force restart with new provider
+                setTimeout(() => {
+                    if (currentWs) {
+                        currentWs.send(JSON.stringify({ 
+                            type: 'kill-terminal', 
+                            id: currentProjectId 
+                        }));
+                    }
+                    document.getElementById('aiStatus').textContent = \`Restart terminal to use \${provider}\`;
+                }, 500);
+            }
         }
         
         // Set specific layout with percentages
