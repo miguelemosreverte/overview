@@ -732,20 +732,24 @@ wss.on('connection', (ws) => {
         const existingState = terminalStates.get(projectId);
         const preferredAI = existingState?.preferredAI;
         
+        console.log(`Project ${projectId} preference: ${preferredAI}`);
+        
         if (preferredAI === 'gemini') {
           // User wants Gemini specifically
+          console.log('Looking for Gemini CLI...');
           for (const path of geminiPaths) {
+            console.log(`Checking: ${path}`);
             if (require('fs').existsSync(path)) {
               aiCommand = path;
               aiType = 'gemini';
               aiArgs = shouldContinue ? ['--checkpoint', 'last'] : [];
-              console.log('Using preferred Gemini at:', aiCommand);
+              console.log('✅ Using preferred Gemini at:', aiCommand);
               break;
             }
           }
           // If Gemini not found but was preferred, show error
           if (!aiCommand) {
-            console.error('Gemini requested but not found');
+            console.error('❌ Gemini requested but not found');
           }
         } else if (preferredAI === 'claude') {
           // User wants Claude specifically
@@ -967,19 +971,30 @@ wss.on('connection', (ws) => {
       }
     } else if (msg.type === 'switch-ai-provider') {
       // Handle AI provider switching from client
-      const state = terminalStates.get(msg.id);
-      if (state) {
-        state.preferredAI = msg.provider;
+      console.log(`Switching AI provider for ${msg.id} to ${msg.provider}`);
+      let state = terminalStates.get(msg.id);
+      
+      // If state doesn't exist, create it (can happen if terminal hasn't been started yet)
+      if (!state) {
+        state = {
+          projectPath: msg.projectPath || `/Users/miguel_lemos/Desktop/${msg.id.replace(/_/g, '-')}`,
+          projectName: msg.id.replace(/_/g, '-'),
+          hasSession: false
+        };
         terminalStates.set(msg.id, state);
-        saveTerminalStatesToDisk();
-        
-        // Send confirmation back to client
-        ws.send(JSON.stringify({
-          type: 'ai-provider-switched',
-          id: msg.id,
-          provider: msg.provider
-        }));
       }
+      
+      state.preferredAI = msg.provider;
+      terminalStates.set(msg.id, state);
+      await saveTerminalStatesToDisk();
+      console.log(`Saved ${msg.provider} preference for ${msg.id}`);
+      
+      // Send confirmation back to client
+      ws.send(JSON.stringify({
+        type: 'ai-provider-switched',
+        id: msg.id,
+        provider: msg.provider
+      }));
     } else if (msg.type === 'kill-terminal') {
       // Kill terminal to allow restart with new AI provider
       const term = terminals.get(msg.id);
