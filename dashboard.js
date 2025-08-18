@@ -845,16 +845,28 @@ wss.on('connection', (ws) => {
           // Wait for the AI to fully initialize before sending context
           // Need to wait longer for the prompt to appear
           setTimeout(() => {
-            // Extract just the text content, removing ANSI escape codes
+            // Extract just the text content, removing ANSI escape codes and control characters
             const cleanContext = hasContext.lastExchange
               .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI color codes
-              .slice(-500); // Reduce to 500 chars to keep it concise
+              .replace(/[\x00-\x1F\x7F]/g, ' ') // Remove control characters
+              .replace(/\s+/g, ' ') // Normalize whitespace
+              .trim();
             
-            // Format a shorter, simpler context message
-            const contextMessage = `Continuing from ${hasContext.fromProvider}. Last context: "${cleanContext.slice(-200)}"`;
+            // Get a meaningful portion of the context
+            const contextSnippet = cleanContext.slice(-300).trim();
+            
+            // Format a shorter, simpler context message - ensure we have content
+            let contextMessage;
+            if (contextSnippet.length > 10) {
+              // Only include context if we have meaningful content
+              contextMessage = `Switching from ${hasContext.fromProvider}. Previous conversation: ${contextSnippet.slice(0, 200)}`;
+            } else {
+              // Fallback if context is too short
+              contextMessage = `Switching from ${hasContext.fromProvider} to continue our conversation about the Overview dashboard application.`;
+            }
             
             // Send the context as input to the PTY
-            console.log(`Sending context to ${aiType}: ${contextMessage.length} chars`);
+            console.log(`Sending context to ${aiType}: "${contextMessage}"`);
             
             // Type the message character by character with small delays
             let charIndex = 0;
@@ -1056,6 +1068,11 @@ wss.on('connection', (ws) => {
         // Get the last 50 lines as context (or less if buffer is smaller)
         const contextLines = Math.min(50, state.buffer.length);
         const lastContext = state.buffer.slice(-contextLines).join('');
+        
+        // Debug: log what we're capturing
+        console.log(`Buffer has ${state.buffer.length} entries, capturing last ${contextLines}`);
+        console.log(`Raw context length: ${lastContext.length} chars`);
+        console.log(`Sample of raw context: ${lastContext.slice(-100)}`);
         
         // Save context for the new provider to use
         state.conversationContext = {
