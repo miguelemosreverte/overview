@@ -742,7 +742,8 @@ wss.on('connection', (ws) => {
             if (require('fs').existsSync(path)) {
               aiCommand = path;
               aiType = 'gemini';
-              aiArgs = shouldContinue ? ['--checkpoint', 'last'] : [];
+              // Gemini uses -c for checkpointing and -y for YOLO mode (auto-approve)
+              aiArgs = shouldContinue ? ['--checkpointing', '--yolo'] : ['--yolo'];
               console.log('✅ Using preferred Gemini at:', aiCommand);
               break;
             }
@@ -784,7 +785,8 @@ wss.on('connection', (ws) => {
               if (require('fs').existsSync(path)) {
                 aiCommand = path;
                 aiType = 'gemini';
-                aiArgs = shouldContinue ? ['--checkpoint', 'last'] : [];
+                // Gemini uses -c for checkpointing and -y for YOLO mode (auto-approve)
+                aiArgs = shouldContinue ? ['--checkpointing', '--yolo'] : ['--yolo'];
                 console.log('Claude not found, using Gemini at:', aiCommand);
                 break;
               }
