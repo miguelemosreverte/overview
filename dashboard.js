@@ -2805,6 +2805,7 @@ const generateWorkspaceHTML = (projects, config) => {
         let currentTerminal = null;
         let currentWs = null;
         let fileWs = null;
+        let isSwitchingProvider = false; // Track when we're intentionally switching
         const projects = ${JSON.stringify(projects.filter(p => !config.hiddenProjects?.includes(p.name)))};
         
         // Terminal pooling - keep top 5 terminals in memory
@@ -2903,6 +2904,16 @@ const generateWorkspaceHTML = (projects, config) => {
             // Generate the project ID (same as how terminals are created)
             const projectId = currentProject.name.replace(/[^a-zA-Z0-9]/g, '_');
             
+            // First, check if we're already using this provider
+            const currentProvider = document.querySelector('.ai-btn.active');
+            const isAlreadyActive = currentProvider && currentProvider.classList.contains(\`\${provider}-btn\`);
+            
+            if (isAlreadyActive) {
+                // Already using this provider, no need to switch
+                document.getElementById('aiStatus').textContent = \`Already using \${provider}\`;
+                return;
+            }
+            
             // Update button states
             document.querySelectorAll('.ai-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(\`.\${provider}-btn\`).classList.add('active');
@@ -2918,6 +2929,9 @@ const generateWorkspaceHTML = (projects, config) => {
                     provider: provider 
                 }));
                 
+                // Set flag to indicate we're switching providers
+                isSwitchingProvider = true;
+                
                 // Kill current terminal to force restart with new provider
                 setTimeout(() => {
                     if (currentWs) {
@@ -2926,13 +2940,37 @@ const generateWorkspaceHTML = (projects, config) => {
                             id: projectId 
                         }));
                     }
-                    document.getElementById('aiStatus').textContent = \`Click terminal to restart with \${provider}\`;
+                    document.getElementById('aiStatus').textContent = \`Restart terminal for \${provider}\`;
                     
-                    // Clear the terminal display
+                    // Clear the terminal display and show a friendly message
                     if (currentTerminal) {
                         currentTerminal.clear();
-                        currentTerminal.write(\`\\r\\n\\x1b[33m⚡ Terminal closed. Click the terminal button to restart with \${provider}.\\x1b[0m\\r\\n\`);
+                        currentTerminal.write(\`\\r\\n\\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\x1b[0m\\r\\n\`);
+                        currentTerminal.write(\`\\r\\n  \\x1b[33m⚡ Switching to \${provider}\\x1b[0m\\r\\n\\r\\n\`);
+                        currentTerminal.write(\`  Terminal closed to switch AI provider.\\r\\n\`);
+                        currentTerminal.write(\`  Click here to restart with \${provider}.\\r\\n\\r\\n\`);
+                        currentTerminal.write(\`\\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\x1b[0m\\r\\n\`);
                     }
+                    
+                    // Remove from pool so it gets recreated
+                    terminalPool.delete(projectId);
+                    wsPool.delete(projectId);
+                    
+                    // Add a one-time click handler to restart the terminal
+                    const terminalContainer = document.getElementById('terminalContainer');
+                    const restartHandler = () => {
+                        terminalContainer.removeEventListener('click', restartHandler);
+                        if (currentProject) {
+                            startTerminal(currentProject.name, currentProject.path);
+                            document.getElementById('aiStatus').textContent = \`Using \${provider}\`;
+                        }
+                    };
+                    terminalContainer.addEventListener('click', restartHandler);
+                    
+                    // Reset flag after a delay
+                    setTimeout(() => {
+                        isSwitchingProvider = false;
+                    }, 1000);
                 }, 500);
             } else {
                 document.getElementById('aiStatus').textContent = 'No active terminal';
@@ -3438,7 +3476,10 @@ const generateWorkspaceHTML = (projects, config) => {
                     
                     terminal.write(filteredData);
                 } else if (msg.type === 'exit') {
-                    terminal.write('\\r\\n\\x1b[31mClaude session ended.\\x1b[0m\\r\\n');
+                    // Only show "session ended" if we're not intentionally switching
+                    if (!isSwitchingProvider) {
+                        terminal.write('\\r\\n\\x1b[31mSession ended.\\x1b[0m\\r\\n');
+                    }
                     // Remove from pool if session ends
                     terminalPool.delete(projectId);
                     wsPool.delete(projectId);
