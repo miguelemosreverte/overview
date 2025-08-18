@@ -921,12 +921,12 @@ wss.on('connection', (ws) => {
                 .join('\n');
               
               contextMessage = `Switching from ${hasContext.fromProvider}. Recent conversation:\n${conversationSummary}\n` +
-                `Tools: Use 'node get-conversation.js ${hasContext.projectName} 10' to see more history. ` +
+                `Tools: Use 'node ${hasContext.projectPath}/get-conversation.js ${hasContext.projectName} 10' to see more history. ` +
                 `Check CLAUDE.md for project context and ${hasContext.projectPath}/.${hasContext.fromProvider}/ for session files.`;
             } else {
               // Fallback if no conversation history yet
               contextMessage = `Switching from ${hasContext.fromProvider} to continue on ${hasContext.projectName}. ` +
-                `Check CLAUDE.md for project context. Use 'node get-conversation.js ${hasContext.projectName} 10' to query conversation history. ` +
+                `Check CLAUDE.md for project context. Use 'node ${hasContext.projectPath}/get-conversation.js ${hasContext.projectName} 10' to query conversation history. ` +
                 `Previous session files in ${hasContext.projectPath}/.${hasContext.fromProvider}/. Check recent git commits for context.`;
             }
             
@@ -1191,14 +1191,14 @@ wss.on('connection', (ws) => {
         terminalStates.set(msg.id, state);
       }
       
-      // Save context for switching - simplified approach
-      // Instead of trying to parse terminal output, just provide handoff info
+      // Save context for switching - use saved conversations not buffer
       state.conversationContext = {
         fromProvider: state.aiType || 'unknown',
         toProvider: msg.provider,
         projectName: state.projectName,
         projectPath: state.projectPath,
-        switchTime: new Date().toISOString()
+        switchTime: new Date().toISOString(),
+        useConversationFile: true  // Flag to use saved conversations instead of buffer
       };
       
       console.log(`Preparing context handoff from ${state.aiType} to ${msg.provider} for ${state.projectName}`);
