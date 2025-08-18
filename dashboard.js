@@ -899,10 +899,24 @@ wss.on('connection', (ws) => {
           const state = terminalStates.get(capturedProjectId);
           if (state) {
             saveConversationState(state.projectPath, state.projectName);
+            
+            // Preserve AI preference even when terminal exits
+            if (state.preferredAI) {
+              terminalStates.set(capturedProjectId, {
+                projectPath: state.projectPath,
+                projectName: state.projectName,
+                hasSession: false,
+                preferredAI: state.preferredAI,
+                aiType: null
+              });
+            } else {
+              terminalStates.delete(capturedProjectId);
+            }
+          } else {
+            terminalStates.delete(capturedProjectId);
           }
           
           terminals.delete(capturedProjectId);
-          terminalStates.delete(capturedProjectId);
           saveTerminalStatesToDisk(); // Save state when session ends
           
           wss.clients.forEach((client) => {
@@ -986,7 +1000,7 @@ wss.on('connection', (ws) => {
       
       state.preferredAI = msg.provider;
       terminalStates.set(msg.id, state);
-      await saveTerminalStatesToDisk();
+      saveTerminalStatesToDisk();
       console.log(`Saved ${msg.provider} preference for ${msg.id}`);
       
       // Send confirmation back to client
