@@ -915,11 +915,13 @@ wss.on('connection', (ws) => {
                 .join('\n');
               
               contextMessage = `Switching from ${hasContext.fromProvider}. Recent conversation:\n${conversationSummary}\n` +
-                `Check CLAUDE.md for project context and ${hasContext.projectPath}/.${hasContext.fromProvider}/ for full history.`;
+                `Tools: Use 'node get-conversation.js ${hasContext.projectName} 10' to see more history. ` +
+                `Check CLAUDE.md for project context and ${hasContext.projectPath}/.${hasContext.fromProvider}/ for session files.`;
             } else {
-              // Fallback if no conversation history
+              // Fallback if no conversation history yet
               contextMessage = `Switching from ${hasContext.fromProvider} to continue on ${hasContext.projectName}. ` +
-                `Check CLAUDE.md for project context and recent git commits.`;
+                `Check CLAUDE.md for project context. Use 'node get-conversation.js ${hasContext.projectName} 10' to query conversation history. ` +
+                `Previous session files in ${hasContext.projectPath}/.${hasContext.fromProvider}/. Check recent git commits for context.`;
             }
             
             // Send the context as input to the PTY
@@ -984,6 +986,37 @@ wss.on('connection', (ws) => {
               state.buffer = [];
             }
             state.buffer.push(data);
+            
+            // Track AI responses (simplified - captures output after user input)
+            if (!state.capturingResponse && state.lastUserInput) {
+              state.capturingResponse = true;
+              state.currentResponse = '';
+              
+              // Stop capturing after 3 seconds (assuming AI has responded)
+              setTimeout(() => {
+                if (state.capturingResponse && state.currentResponse.length > 10) {
+                  // Clean and save AI response
+                  const cleanResponse = state.currentResponse
+                    .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI codes
+                    .replace(/[\x00-\x1F\x7F]/g, ' ') // Remove control chars
+                    .replace(/\s+/g, ' ') // Normalize whitespace
+                    .trim()
+                    .slice(0, 500); // Limit length
+                  
+                  if (cleanResponse.length > 20) {
+                    saveConversationExchange(capturedProjectId, 'assistant', cleanResponse);
+                  }
+                }
+                state.capturingResponse = false;
+                state.currentResponse = '';
+                state.lastUserInput = null;
+              }, 3000);
+            }
+            
+            // Accumulate response data
+            if (state.capturingResponse) {
+              state.currentResponse += data;
+            }
             
             // Calculate total buffer size
             const totalLength = state.buffer.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -1099,6 +1132,8 @@ wss.on('connection', (ws) => {
           if (userMessage.length > 0 && !userMessage.startsWith('/')) {
             // Save user message to conversation history
             saveConversationExchange(projectId, 'user', userMessage);
+            // Mark that we should capture the AI response
+            state.lastUserInput = userMessage;
           }
           state.currentInput = '';
         } else {
