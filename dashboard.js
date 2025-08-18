@@ -840,35 +840,20 @@ wss.on('connection', (ws) => {
         
         // If we have context from switching providers, inject it as the first message
         if (hasContext && hasContext.toProvider === aiType) {
-          console.log(`Injecting conversation context from ${hasContext.fromProvider} to ${aiType}`);
+          console.log(`Injecting context handoff from ${hasContext.fromProvider} to ${aiType}`);
           
           // Wait for the AI to fully initialize before sending context
-          // Need to wait longer for the prompt to appear
           setTimeout(() => {
-            // Extract just the text content, removing ANSI escape codes and control characters
-            const cleanContext = hasContext.lastExchange
-              .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI color codes
-              .replace(/[\x00-\x1F\x7F]/g, ' ') // Remove control characters
-              .replace(/\s+/g, ' ') // Normalize whitespace
-              .trim();
-            
-            // Get a meaningful portion of the context
-            const contextSnippet = cleanContext.slice(-300).trim();
-            
-            // Format a shorter, simpler context message - ensure we have content
-            let contextMessage;
-            if (contextSnippet.length > 10) {
-              // Only include context if we have meaningful content
-              contextMessage = `Switching from ${hasContext.fromProvider}. Previous conversation: ${contextSnippet.slice(0, 200)}`;
-            } else {
-              // Fallback if context is too short
-              contextMessage = `Switching from ${hasContext.fromProvider} to continue our conversation about the Overview dashboard application.`;
-            }
+            // Create a clear handoff message with instructions
+            const contextMessage = `I'm switching from ${hasContext.fromProvider} to ${aiType} to continue working on the ${hasContext.projectName} project. ` +
+              `The previous AI session files are in ${hasContext.projectPath}/.${hasContext.fromProvider}/ directory. ` +
+              `Key context: We're developing the Overview dashboard app with AI provider switching feature. ` +
+              `Please check the CLAUDE.md file for project context and recent git commits for latest changes.`;
             
             // Send the context as input to the PTY
-            console.log(`Sending context to ${aiType}: "${contextMessage}"`);
+            console.log(`Sending handoff message to ${aiType}`);
             
-            // Type the message character by character with small delays
+            // Type the message quickly but visibly
             let charIndex = 0;
             const typeInterval = setInterval(() => {
               if (charIndex < contextMessage.length) {
@@ -876,13 +861,13 @@ wss.on('connection', (ws) => {
                 charIndex++;
               } else {
                 clearInterval(typeInterval);
-                // Send Enter after a small delay
+                // Send Enter after typing completes
                 setTimeout(() => {
                   term.write('\r');
-                  console.log('Context sent with Enter key');
+                  console.log('Handoff message sent');
                 }, 100);
               }
-            }, 10); // Type each character with 10ms delay
+            }, 5); // Type faster - 5ms per character
             
             // Clear the context after using it
             const state = terminalStates.get(projectId);
@@ -891,7 +876,7 @@ wss.on('connection', (ws) => {
               terminalStates.set(projectId, state);
               saveTerminalStatesToDisk();
             }
-          }, 5000); // Wait 5 seconds for AI to be fully ready with prompt
+          }, 4500); // Wait 4.5 seconds for AI to be ready
         }
         
         // Send output to WebSocket - capture projectId in closure
@@ -1063,27 +1048,17 @@ wss.on('connection', (ws) => {
         terminalStates.set(msg.id, state);
       }
       
-      // Save the last conversation context if we have a terminal buffer
-      if (state.buffer && state.buffer.length > 0) {
-        // Get the last 50 lines as context (or less if buffer is smaller)
-        const contextLines = Math.min(50, state.buffer.length);
-        const lastContext = state.buffer.slice(-contextLines).join('');
-        
-        // Debug: log what we're capturing
-        console.log(`Buffer has ${state.buffer.length} entries, capturing last ${contextLines}`);
-        console.log(`Raw context length: ${lastContext.length} chars`);
-        console.log(`Sample of raw context: ${lastContext.slice(-100)}`);
-        
-        // Save context for the new provider to use
-        state.conversationContext = {
-          fromProvider: state.aiType || 'unknown',
-          toProvider: msg.provider,
-          lastExchange: lastContext,
-          switchTime: new Date().toISOString()
-        };
-        
-        console.log(`Saving conversation context from ${state.aiType} for ${msg.provider}`);
-      }
+      // Save context for switching - simplified approach
+      // Instead of trying to parse terminal output, just provide handoff info
+      state.conversationContext = {
+        fromProvider: state.aiType || 'unknown',
+        toProvider: msg.provider,
+        projectName: state.projectName,
+        projectPath: state.projectPath,
+        switchTime: new Date().toISOString()
+      };
+      
+      console.log(`Preparing context handoff from ${state.aiType} to ${msg.provider} for ${state.projectName}`);
       
       state.preferredAI = msg.provider;
       terminalStates.set(msg.id, state);
