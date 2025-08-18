@@ -1001,15 +1001,18 @@ wss.on('connection', (ws) => {
               // Stop capturing after 3 seconds (assuming AI has responded)
               setTimeout(() => {
                 if (state.capturingResponse && state.currentResponse.length > 10) {
-                  // Clean and save AI response
+                  // Clean and save AI response more thoroughly
                   const cleanResponse = state.currentResponse
-                    .replace(/\x1b\[[0-9;]*m/g, '') // Remove ANSI codes
-                    .replace(/[\x00-\x1F\x7F]/g, ' ') // Remove control chars
+                    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove ANSI escape sequences
+                    .replace(/\[[\dA-Z]+/g, '') // Remove bracket sequences
+                    .replace(/[╭─╮│╰╯]/g, '') // Remove box drawing characters
+                    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ') // Remove control chars
                     .replace(/\s+/g, ' ') // Normalize whitespace
                     .trim()
                     .slice(0, 500); // Limit length
                   
-                  if (cleanResponse.length > 20) {
+                  if (cleanResponse.length > 20 && !cleanResponse.includes('[2K') && !cleanResponse.includes('[1A')) {
+                    console.log(`Saving AI response: "${cleanResponse.slice(0, 50)}..."`);
                     saveConversationExchange(capturedProjectId, 'assistant', cleanResponse);
                   }
                 }
@@ -1134,8 +1137,14 @@ wss.on('connection', (ws) => {
         // Accumulate input until Enter is pressed
         if (msg.data.includes('\r') || msg.data.includes('\n')) {
           // User pressed Enter - save the complete input
-          const userMessage = state.currentInput.trim();
-          console.log(`User pressed Enter. Input: "${userMessage}"`);
+          // Clean the message more thoroughly
+          const userMessage = state.currentInput
+            .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove ANSI escape sequences
+            .replace(/\[[\dA-Z]/g, '') // Remove bracket sequences like [I
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars except tab/newline/CR
+            .trim();
+          
+          console.log(`User pressed Enter. Cleaned input: "${userMessage}"`);
           if (userMessage.length > 0 && !userMessage.startsWith('/')) {
             // Save user message to conversation history
             console.log(`Saving user message for ${projectId}: "${userMessage}"`);
@@ -1144,10 +1153,9 @@ wss.on('connection', (ws) => {
             state.lastUserInput = userMessage;
           }
           state.currentInput = '';
-        } else {
-          // Accumulate characters (excluding control sequences)
-          const cleanChar = msg.data.replace(/[\x00-\x1F\x7F]/g, '');
-          state.currentInput += cleanChar;
+        } else if (!msg.data.includes('\x1b')) {
+          // Only accumulate non-escape characters
+          state.currentInput += msg.data;
         }
         
         // Pass input to terminal
