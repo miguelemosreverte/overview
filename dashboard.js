@@ -915,9 +915,9 @@ wss.on('connection', (ws) => {
             PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/.local/bin:${process.env.PATH}`,
             // Use Google Code Assist authentication for Gemini
             GOOGLE_GENAI_USE_GCA: aiType === 'gemini' ? 'true' : '',
-            // Keep other auth methods as fallback
-            GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-            GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+            // Your API key for Gemini
+            GEMINI_API_KEY: 'AIzaSyCfgnzsVruJxjDHr8CHReHTLic1eBzqX_g',
+            GOOGLE_API_KEY: 'AIzaSyCfgnzsVruJxjDHr8CHReHTLic1eBzqX_g',
             GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || ''
           }
         });
