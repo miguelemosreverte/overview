@@ -83,7 +83,9 @@ async function saveTerminalStatesToDisk() {
       states[id] = {
         projectPath: state.projectPath,
         projectName: state.projectName,
-        hasSession: true
+        hasSession: true,
+        preferredAI: state.preferredAI || null,
+        aiType: state.aiType || null
       };
     }
     await fs.writeFile(TERMINAL_STATES_FILE, JSON.stringify(states, null, 2));
