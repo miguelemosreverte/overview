@@ -1,5 +1,12 @@
 const { app, BrowserWindow, Menu, shell, nativeImage } = require('electron');
 const path = require('path');
+
+// Load .env from the correct location in packaged app
+const envPath = app.isPackaged 
+  ? path.join(process.resourcesPath, '.env')
+  : path.join(__dirname, '.env');
+  
+require('dotenv').config({ path: envPath });
 const { spawn } = require('child_process');
 const http = require('http');
 

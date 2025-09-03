@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
@@ -808,6 +810,10 @@ wss.on('connection', (ws) => {
           ['--continue', '--dangerously-skip-permissions'] : 
           ['--dangerously-skip-permissions'];
         
+        // Gemini will auto-detect GEMINI_API_KEY from environment
+        // --yolo enables auto-approval mode (no confirmation prompts)
+        const geminiArgs = ['--yolo'];
+        
         // Find AI CLI command - try claude first, then gemini as fallback
         const claudePaths = [
           '/usr/local/bin/claude',
@@ -844,8 +850,8 @@ wss.on('connection', (ws) => {
             if (require('fs').existsSync(path)) {
               aiCommand = path;
               aiType = 'gemini';
-              // Gemini uses -c for checkpointing and -y for YOLO mode (auto-approve)
-              aiArgs = shouldContinue ? ['--checkpointing', '--yolo'] : ['--yolo'];
+              // Gemini args: use API key auth mode (will auto-detect GEMINI_API_KEY env var)
+              aiArgs = geminiArgs;
               console.log('✅ Using preferred Gemini at:', aiCommand);
               break;
             }
@@ -887,8 +893,8 @@ wss.on('connection', (ws) => {
               if (require('fs').existsSync(path)) {
                 aiCommand = path;
                 aiType = 'gemini';
-                // Gemini uses -c for checkpointing and -y for YOLO mode (auto-approve)
-                aiArgs = shouldContinue ? ['--checkpointing', '--yolo'] : ['--yolo'];
+                // Gemini args: use API key auth mode (will auto-detect GEMINI_API_KEY env var)
+                aiArgs = geminiArgs;
                 console.log('Claude not found, using Gemini at:', aiCommand);
                 break;
               }
@@ -913,11 +919,9 @@ wss.on('connection', (ws) => {
           env: {
             ...process.env,
             PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/.local/bin:${process.env.PATH}`,
-            // Use Google Code Assist authentication for Gemini
-            GOOGLE_GENAI_USE_GCA: aiType === 'gemini' ? 'true' : '',
-            // Your API key for Gemini
-            GEMINI_API_KEY: 'AIzaSyCfgnzsVruJxjDHr8CHReHTLic1eBzqX_g',
-            GOOGLE_API_KEY: 'AIzaSyCfgnzsVruJxjDHr8CHReHTLic1eBzqX_g',
+            // API keys from .env file - Gemini will auto-detect and use them
+            GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+            GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
             GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT || ''
           }
         });
@@ -2237,11 +2241,47 @@ const generateGridHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
+            // Track backspace presses for 15x-backspace clear
+            let backspaceCount = 0;
+            let backspaceTimer = null;
+            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
                     // Skip sending number keys to terminal, they're used for shortcuts
                     return;
+                }
+                
+                // Check for backspace (ASCII 127 or \x7f)
+                if (data === '\x7f') {
+                    backspaceCount++;
+                    
+                    // Clear previous timer
+                    if (backspaceTimer) {
+                        clearTimeout(backspaceTimer);
+                    }
+                    
+                    // Check if we hit 15 backspaces
+                    if (backspaceCount >= 15) {
+                        // Clear the entire line
+                        // Send Ctrl+U to clear from cursor to beginning of line
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'input', id: id, data: '\x15' })); // Ctrl+U
+                        }
+                        backspaceCount = 0;
+                        return;
+                    }
+                    
+                    // Reset counter after 800ms
+                    backspaceTimer = setTimeout(() => {
+                        backspaceCount = 0;
+                    }, 800);
+                } else {
+                    // Reset on any other key
+                    backspaceCount = 0;
+                    if (backspaceTimer) {
+                        clearTimeout(backspaceTimer);
+                    }
                 }
                 
                 // Send all input directly to server without interception
@@ -3729,11 +3769,47 @@ const generateWorkspaceHTML = (projects, config) => {
                 terminal.write('\\r\\n\\x1b[31mConnection error. Please try again.\\x1b[0m\\r\\n');
             };
             
+            // Track backspace presses for 15x-backspace clear
+            let backspaceCount = 0;
+            let backspaceTimer = null;
+            
             terminal.onData((data) => {
                 // Filter out number keys 1-9 when not modified
                 if (data.length === 1 && data >= '1' && data <= '9') {
                     // Skip sending number keys to terminal, they're used for shortcuts
                     return;
+                }
+                
+                // Check for backspace (ASCII 127 or \x7f)
+                if (data === '\x7f') {
+                    backspaceCount++;
+                    
+                    // Clear previous timer
+                    if (backspaceTimer) {
+                        clearTimeout(backspaceTimer);
+                    }
+                    
+                    // Check if we hit 15 backspaces
+                    if (backspaceCount >= 15) {
+                        // Clear the entire line
+                        // Send Ctrl+U to clear from cursor to beginning of line
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'input', id: projectId, data: '\x15' })); // Ctrl+U
+                        }
+                        backspaceCount = 0;
+                        return;
+                    }
+                    
+                    // Reset counter after 800ms
+                    backspaceTimer = setTimeout(() => {
+                        backspaceCount = 0;
+                    }, 800);
+                } else {
+                    // Reset on any other key
+                    backspaceCount = 0;
+                    if (backspaceTimer) {
+                        clearTimeout(backspaceTimer);
+                    }
                 }
                 
                 // Send all input directly to server without interception

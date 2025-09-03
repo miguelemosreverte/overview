@@ -136,6 +136,14 @@ fi
 echo ""
 echo "✅ CLAUDE.md created with Valve Protocol"
 
+# Copy get-conversation.js tool if it doesn't exist
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/get-conversation.js" ] && [ ! -f "./get-conversation.js" ]; then
+    cp "$SCRIPT_DIR/get-conversation.js" ./get-conversation.js
+    chmod +x ./get-conversation.js
+    echo "✅ Conversation history tool installed"
+fi
+
 # Create .valve-protocol directory for metrics
 mkdir -p .valve-protocol/baselines
 

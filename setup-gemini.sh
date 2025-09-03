@@ -17,7 +17,12 @@ echo "3) Vertex AI (Enterprise)"
 echo "   - For Google Cloud users"
 echo ""
 
-read -p "Enter your choice (1-3): " choice
+if [ -n "$1" ]; then
+    api_key="$1"
+    choice=2 # Force choice to 2 if API key is provided as argument
+else
+    read -p "Enter your choice (1-3): " choice
+fi
 
 case $choice in
     1)
@@ -32,7 +37,9 @@ case $choice in
     2)
         echo ""
         echo "Get your API key from: https://aistudio.google.com/apikey"
-        read -p "Enter your GEMINI_API_KEY: " api_key
+        if [ -z "$api_key" ]; then # Only prompt if api_key is not already set from arguments
+            read -p "Enter your GEMINI_API_KEY: " api_key
+        fi
         
         # Add to shell profile
         echo "" >> ~/.zshrc

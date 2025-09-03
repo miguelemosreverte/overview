@@ -27,6 +27,16 @@
       "output": "dist"
     },
     "asar": false,
+    "files": [
+      "**/*",
+      ".env"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns"
@@ -41,6 +51,7 @@
   },
   "dependencies": {
     "chokidar": "^4.0.3",
+    "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "js-yaml": "^4.1.0",
     "node-pty": "^1.0.0",
